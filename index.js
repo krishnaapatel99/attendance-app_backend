@@ -39,7 +39,7 @@ app.use(cors({
     console.log(`❌ CORS blocked origin: ${origin}`);
     return callback(new Error('Not allowed by CORS'));
   },
-  credentials: false, // Set to false for cross-origin
+  credentials: true, // Enable credentials for secure authentication
 }));
 
 // Health check endpoint
