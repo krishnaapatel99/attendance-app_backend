@@ -89,7 +89,7 @@ async function startServer() {
     
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌐 Backend URL: ${process.env.NODE_ENV === 'production' ? 'https://attendance-app-backend-3mi7.onrender.com' : `http://localhost:${PORT}`}`);
+      console.log(`🌐 Backend URL: ${process.env.NODE_ENV === 'production' ? 'https://attendance-app-backend-4.onrender.com' : `http://localhost:${PORT}`}`);
       console.log(`💻 Frontend URL: ${process.env.CLIENT_URL || "http://localhost:5173"}`);
       console.log(`🟢 Health check: ${process.env.NODE_ENV === 'production' ? 'https://attendance-app-backend-3mi7.onrender.com/health' : `http://localhost:${PORT}/health`}`);
     });
