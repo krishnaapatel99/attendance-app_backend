@@ -1,212 +1,171 @@
 import pool from "../config/database.js";
 
-// Get complete timetable
-export const getTimetable = async (req, res) => {
+
+const TIME_SLOTS = {
+  1: "9:30-10:30",
+  2: "10:30-11:30",
+  3: "11:30-12:30",
+  4: "1:00-2:00",
+  5: "2:00-3:00",
+  6: "3:00-4:00",
+  7: "4:00-4:30"
+};
+
+export const getStudentWeeklyTimetable = async (req, res) => {
   try {
-    const { class_name = 'SE' } = req.query;
-    
+    const studentId = req.user.id;
+
+ 
+    const studentRes = await pool.query(
+      `SELECT class_id FROM students WHERE student_rollno = $1`,
+      [studentId]
+    );
+
+    if (!studentRes.rowCount) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found"
+      });
+    }
+
+    const classId = studentRes.rows[0].class_id;
+
+    // 2️⃣ Get student's batch(es)
+    const batchRes = await pool.query(
+      `SELECT batch_id FROM student_batches WHERE student_rollno = $1`,
+      [studentId]
+    );
+
+    const batchIds = batchRes.rows.map(b => b.batch_id);
+
+    // 3️⃣ Fetch timetable entries
     const result = await pool.query(
-      `SELECT 
-        t.timetable_id,
-        t.class_name,
+      `SELECT
         t.day_of_week,
         t.lecture_no,
+        t.lecture_type,
         s.subject_name,
-        s.subject_id,
-        tc.name as teacher_name,
-        tc.teacher_id
+        tc.name AS teacher_name,
+        b.batch_name
       FROM timetable t
       JOIN subjects s ON t.subject_id = s.subject_id
       JOIN teachers tc ON t.teacher_id = tc.teacher_id
-      WHERE t.class_name = $1
-      ORDER BY 
-        CASE 
+      LEFT JOIN batches b ON t.batch_id = b.batch_id
+      WHERE
+        t.class_id = $1
+        AND (
+          t.lecture_type = 'LECTURE'
+          OR (
+            t.lecture_type = 'PRACTICAL'
+            AND t.batch_id = ANY($2::int[])
+          )
+        )
+      ORDER BY
+        CASE
           WHEN t.day_of_week = 'Monday' THEN 1
           WHEN t.day_of_week = 'Tuesday' THEN 2
           WHEN t.day_of_week = 'Wednesday' THEN 3
           WHEN t.day_of_week = 'Thursday' THEN 4
           WHEN t.day_of_week = 'Friday' THEN 5
           WHEN t.day_of_week = 'Saturday' THEN 6
-          ELSE 7
         END,
         t.lecture_no`,
-      [class_name]
+      [classId, batchIds]
     );
 
-    // Organize data by day and lecture
-    const timetableByDay = {};
-    const timeSlots = [
-      { lecture: 1, time: '9:30-10:30' },
-      { lecture: 2, time: '10:30-11:30' },
-      { lecture: 3, time: '11:30-12:30' },
-      { lecture: 4, time: '1:00-2:00' },
-      { lecture: 5, time: '2:00-3:00' },
-      { lecture: 6, time: '3:00-4:00' },
-      { lecture: 7, time: '4:00-4:30' }
-    ];
+
+    const timetable = {};
 
     result.rows.forEach(row => {
-      if (!timetableByDay[row.day_of_week]) {
-        timetableByDay[row.day_of_week] = {};
+      if (!timetable[row.day_of_week]) {
+        timetable[row.day_of_week] = {};
       }
-      timetableByDay[row.day_of_week][row.lecture_no] = {
-        timetable_id: row.timetable_id,
-        subject_name: row.subject_name,
-        subject_id: row.subject_id,
-        teacher_name: row.teacher_name,
-        teacher_id: row.teacher_id
+
+      timetable[row.day_of_week][row.lecture_no] = {
+        subject: row.subject_name,
+        type: row.lecture_type,
+        teacher: row.teacher_name,
+        batch: row.lecture_type === "PRACTICAL" ? row.batch_name : null,
+        time: TIME_SLOTS[row.lecture_no]
       };
     });
 
     res.json({
       success: true,
-      data: {
-        timetable: timetableByDay,
-        timeSlots: timeSlots,
-        class_name: class_name
-      }
+      role: "student",
+      timetable,
+      timeSlots: TIME_SLOTS
     });
+
   } catch (error) {
-    console.error('Error fetching timetable:', error);
+    console.error("Student timetable error:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error"
     });
   }
 };
 
-// Get today's schedule for a specific user
-export const getTodaySchedule = async (req, res) => {
-  try {
-    const today = new Date().toLocaleString("en-US", { weekday: "long", timeZone: "Asia/Kolkata" });
-    const userRole = req.user.role;
-    const userId = req.user.id;
-    
-    let query;
-    let params;
-    
-    if (userRole === 'teacher') {
-      query = `
-        SELECT 
-          t.timetable_id,
-          t.class_name,
-          t.day_of_week,
-          t.lecture_no,
-          s.subject_name,
-          s.subject_id,
-          tc.name as teacher_name
-        FROM timetable t
-        JOIN subjects s ON t.subject_id = s.subject_id
-        JOIN teachers tc ON t.teacher_id = tc.teacher_id
-        WHERE t.teacher_id = $1 AND t.day_of_week = $2
-        ORDER BY t.lecture_no
-      `;
-      params = [userId, today];
-    } else {
-      // For students, show all classes for their class
-      query = `
-        SELECT 
-          t.timetable_id,
-          t.class_name,
-          t.day_of_week,
-          t.lecture_no,
-          s.subject_name,
-          s.subject_id,
-          tc.name as teacher_name
-        FROM timetable t
-        JOIN subjects s ON t.subject_id = s.subject_id
-        JOIN teachers tc ON t.teacher_id = tc.teacher_id
-        WHERE t.class_name = 'SE' AND t.day_of_week = $1
-        ORDER BY t.lecture_no
-      `;
-      params = [today];
-    }
-    
-    const result = await pool.query(query, params);
-    
-    res.json({
-      success: true,
-      data: result.rows,
-      today: today
-    });
-  } catch (error) {
-    console.error('Error fetching today schedule:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
-  }
-};
 
-// Get subjects for a teacher
-export const getTeacherSubjects = async (req, res) => {
+export const getTeacherWeeklyTimetable = async (req, res) => {
   try {
     const teacherId = req.user.id;
-    
-    const result = await pool.query(
-      `SELECT DISTINCT s.subject_id, s.subject_name
-       FROM subjects s
-       WHERE s.teacher_id = $1
-       ORDER BY s.subject_name`,
-      [teacherId]
-    );
-    
-    res.json({
-      success: true,
-      data: result.rows
-    });
-  } catch (error) {
-    console.error('Error fetching teacher subjects:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
-  }
-};
 
-// Get timetable entries for a specific subject and teacher
-export const getSubjectTimetable = async (req, res) => {
-  try {
-    const teacherId = req.user.id;
-    const { subject_id } = req.query;
-    
     const result = await pool.query(
-      `SELECT 
-        t.timetable_id,
-        t.class_name,
+      `SELECT
         t.day_of_week,
         t.lecture_no,
-        s.subject_name
+        t.lecture_type,
+        s.subject_name,
+        c.year,
+        c.branch,
+        b.batch_name
       FROM timetable t
       JOIN subjects s ON t.subject_id = s.subject_id
-      WHERE t.teacher_id = $1 AND t.subject_id = $2
-      ORDER BY 
-        CASE 
+      JOIN classes c ON t.class_id = c.class_id
+      LEFT JOIN batches b ON t.batch_id = b.batch_id
+      WHERE t.teacher_id = $1
+      ORDER BY
+        CASE
           WHEN t.day_of_week = 'Monday' THEN 1
           WHEN t.day_of_week = 'Tuesday' THEN 2
           WHEN t.day_of_week = 'Wednesday' THEN 3
           WHEN t.day_of_week = 'Thursday' THEN 4
           WHEN t.day_of_week = 'Friday' THEN 5
           WHEN t.day_of_week = 'Saturday' THEN 6
-          ELSE 7
         END,
         t.lecture_no`,
-      [teacherId, subject_id]
+      [teacherId]
     );
-    
+
+    const timetable = {};
+
+    result.rows.forEach(row => {
+      if (!timetable[row.day_of_week]) {
+        timetable[row.day_of_week] = {};
+      }
+
+      timetable[row.day_of_week][row.lecture_no] = {
+        subject: row.subject_name,
+        type: row.lecture_type,
+        class: `${row.year} ${row.branch}`,
+        batch: row.lecture_type === "PRACTICAL" ? row.batch_name : null,
+        time: TIME_SLOTS[row.lecture_no]
+      };
+    });
+
     res.json({
       success: true,
-      data: result.rows
+      role: "teacher",
+      timetable,
+      timeSlots: TIME_SLOTS
     });
+
   } catch (error) {
-    console.error('Error fetching subject timetable:', error);
+    console.error("Teacher timetable error:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error"
     });
   }
 };

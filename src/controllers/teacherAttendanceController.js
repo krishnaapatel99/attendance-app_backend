@@ -2,230 +2,308 @@ import pool from "../config/database.js";
 
 //Show data and rows of students 
 
-export const getTeacherDashboard = async (req, res) => { 
-    try { const teacherId = req.user.id; // Authenticated teacher ID
-        // 1. Teacher basic info 
-        const teacherResult = await pool.query( "SELECT teacher_id, name, email FROM teachers WHERE teacher_id = $1",
-             [teacherId] );
-
-             if (teacherResult.rows.length === 0) 
-                { return res.status(404).json({
-                     success: false,
-                      message: "Teacher not found" });
-                     }
-            const teacher = teacherResult.rows[0];
-             // 2. Subjects taught by teacher
-              const subjectsResult = await pool.query( "SELECT subject_id, subject_name FROM subjects WHERE teacher_id = $1",
-                 [teacherId] );
-
-            // 3. Today's schedule 
-            const today = new Date().toLocaleString("en-US", { weekday: "long", timeZone: "Asia/Kolkata" }); 
-            const todayScheduleResult = await pool.query( `SELECT t.timetable_id, t.class_name, t.lecture_no, 
-                s.subject_name 
-                FROM timetable t 
-                JOIN subjects s ON t.subject_id = s.subject_id 
-                WHERE t.teacher_id = $1 AND t.day_of_week = $2 
-                ORDER BY t.lecture_no`, 
-                [teacherId, today] );
-
-            // 4. Unique students count
-             const studentCountResult = await pool.query( `SELECT COUNT(DISTINCT st.student_rollno) AS total_students
-       FROM students st
-       JOIN attendance a ON st.student_rollno = a.student_rollno
-       JOIN timetable t ON a.timetable_id = t.timetable_id
-       WHERE t.teacher_id = $1`,
-              [teacherId] );
-
-              // Final response
-               res.json({ success: true,
-                          data: { teacher: 
-                            { id: teacher.teacher_id, 
-                                name: teacher.name,
-                                 email: teacher.email, 
-                                 assignedSubjects: subjectsResult.rows }, 
-                                 todaySchedule: todayScheduleResult.rows,
-                                  totalStudents: studentCountResult.rows[0].total_students } });
-
-            } catch (error)
-             { console.error("Error fetching teacher dashboard:", error);
-                 res.status(500).json({ success: false,
-                     message: "Internal server error",
-                      error: error.message }); 
-                    }
-                 };
-
-// Get students list for attendance marking with current timetable context
-export const getStudentsForAttendance = async (req, res) => {
+export const getTeacherDashboard = async (req, res) => {
   try {
-    const { class_name = 'SE', div = 'A' } = req.query;
     const teacherId = req.user.id;
-    
-    // Get students
-    let query = "SELECT student_rollno, name, class, div, email FROM students";
-    let params = [];
-    
-    if (class_name && div) {
-      query += " WHERE class = $1 AND div = $2";
-      params = [class_name, div];
-    } else if (class_name) {
-      query += " WHERE class = $1";
-      params = [class_name];
-    }
-    
-    query += " ORDER BY name";
-    
-    const studentsResult = await pool.query(query, params);
-    
-    // Get today's schedule for this teacher
-    const today = new Date().toLocaleString("en-US", { weekday: "long", timeZone: "Asia/Kolkata" });
-    console.log('Fetching schedule for teacher:', teacherId, 'today:', today, 'class:', class_name);
-    
-    const scheduleResult = await pool.query(
-      `SELECT 
+
+    const today = new Date().toLocaleString("en-US", {
+      weekday: "long",
+      timeZone: "Asia/Kolkata"
+    });
+
+    const result = await pool.query(
+      `
+      SELECT 
         t.timetable_id,
         t.lecture_no,
+        t.lecture_type,
         s.subject_name,
-        s.subject_id
+        c.year,
+        c.branch,
+        b.batch_name,
+        t.academic_year
       FROM timetable t
-      JOIN subjects s ON t.subject_id = s.subject_id
-      WHERE t.teacher_id = $1 AND t.day_of_week = $2 AND t.class_name = $3
-      ORDER BY t.lecture_no`,
-      [teacherId, today, class_name]
+      JOIN subjects s ON s.subject_id = t.subject_id
+      JOIN classes c ON c.class_id = t.class_id
+      LEFT JOIN batches b ON b.batch_id = t.batch_id
+      WHERE t.teacher_id = $1
+        AND t.day_of_week = $2
+      ORDER BY t.lecture_no
+      `,
+      [teacherId, today]
     );
-    
-    console.log('Schedule found:', scheduleResult.rows);
-    
-    res.json({
-      success: true,
-      data: {
-        students: studentsResult.rows,
-        todaySchedule: scheduleResult.rows,
-        currentDay: today
-      }
-    });
-  } catch (error) {
-    console.error("Error fetching students:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message
-    });
-  }
-};
 
-// Get attendance data for a specific date and class
-export const getAttendanceData = async (req, res) => {
-  try {
-    const { attendance_date, class_name, div, subject_id, timetable_id } = req.query;
-    const teacher_id = req.user.id;
-    
-    const result = await pool.query(
-      `SELECT 
-        s.student_rollno,
-        s.name,
-        s.class,
-        s.div,
-        a.status,
-        a.submitted,
-        a.attendance_id
-      FROM students s
-      LEFT JOIN attendance a ON s.student_rollno = a.student_rollno 
-        AND a.attendance_date = $1 
-        AND a.subject_id = $2 
-        AND a.timetable_id = $3
-      WHERE s.class = $4 AND s.div = $5
-      ORDER BY s.name`,
-      [attendance_date, subject_id, timetable_id, class_name, div]
-    );
-    
     res.json({
       success: true,
       data: result.rows
     });
-  } catch (error) {
-    console.error("Error fetching attendance data:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message
-    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+
+
+// Get students list for attendance marking with current timetable context
+export const getStudentsForAttendance = async (req, res) => {
+  try {
+    const { timetable_id } = req.query;
+
+    // Get timetable context
+    const tt = await pool.query(
+      `
+      SELECT lecture_type, class_id, batch_id
+      FROM timetable
+      WHERE timetable_id = $1
+      `,
+      [timetable_id]
+    );
+
+    if (!tt.rows.length) {
+      return res.status(404).json({ success: false, message: "Lecture not found" });
+    }
+
+    const { lecture_type, class_id, batch_id } = tt.rows[0];
+
+    let studentsQuery;
+    let params;
+
+    // LECTURE → whole class
+    if (lecture_type === "LECTURE") {
+      studentsQuery = `
+        SELECT student_rollno, name
+        FROM students
+        WHERE class_id = $1
+        ORDER BY student_rollno
+      `;
+      params = [class_id];
+    }
+
+    // PRACTICAL → batch students only
+    else {
+      studentsQuery = `
+        SELECT s.student_rollno, s.name
+        FROM students s
+        JOIN student_batches sb ON sb.student_rollno = s.student_rollno
+        WHERE sb.batch_id = $1
+        ORDER BY s.student_rollno
+      `;
+      params = [batch_id];
+    }
+
+    const students = await pool.query(studentsQuery, params);
+
+    res.json({
+      success: true,
+      data: students.rows
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+// Get attendance data for a specific date and class
+export const getAttendanceData = async (req, res) => {
+  try {
+    const { timetable_id, attendance_date } = req.query;
+
+    // get lecture context
+    const tt = await pool.query(
+      `
+      SELECT lecture_type, class_id, batch_id
+      FROM timetable
+      WHERE timetable_id = $1
+      `,
+      [timetable_id]
+    );
+
+    if (!tt.rows.length) {
+      return res.status(404).json({ success: false });
+    }
+
+    const { lecture_type, class_id, batch_id } = tt.rows[0];
+
+    let query;
+    let params;
+
+    // LECTURE → whole class
+    if (lecture_type === "LECTURE") {
+      query = `
+        SELECT 
+          s.student_rollno,
+          s.name,
+          a.status,
+          a.submitted,
+          a.attendance_id
+        FROM students s
+        LEFT JOIN attendance a 
+          ON a.student_rollno = s.student_rollno
+          AND a.timetable_id = $1
+          AND a.attendance_date = $2
+        WHERE s.class_id = $3
+        ORDER BY s.student_rollno
+      `;
+      params = [timetable_id, attendance_date, class_id];
+    }
+    // PRACTICAL → batch students
+    else {
+      query = `
+        SELECT 
+          s.student_rollno,
+          s.name,
+          a.status,
+          a.submitted,
+          a.attendance_id
+        FROM students s
+        JOIN student_batches sb ON sb.student_rollno = s.student_rollno
+        LEFT JOIN attendance a 
+          ON a.student_rollno = s.student_rollno
+          AND a.timetable_id = $1
+          AND a.attendance_date = $2
+        WHERE sb.batch_id = $3
+        ORDER BY s.student_rollno
+      `;
+      params = [timetable_id, attendance_date, batch_id];
+    }
+
+    const result = await pool.query(query, params);
+
+    res.json({ success: true, data: result.rows });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false });
+  }
+};
+
+
 
                  // Mark attendance for a student 
                  
 
 // Mark or update attendance (before submission)
 export const markAttendance = async (req, res) => {
-  const { student_rollno, subject_id, timetable_id, status, attendance_date } = req.body;
-  const teacher_id = req.user.id;
-
-  console.log('Received attendance data:', {
-    student_rollno,
-    subject_id,
-    timetable_id,
-    status,
-    attendance_date,
-    teacher_id
-  });
+  const { student_rollno, timetable_id, status, attendance_date } = req.body;
 
   try {
-    // Check if already marked
     const existing = await pool.query(
-      `SELECT * FROM attendance 
-       WHERE student_rollno = $1 AND subject_id = $2 AND attendance_date = $3 AND timetable_id = $4`,
-      [student_rollno, subject_id, attendance_date, timetable_id]
+      `
+      SELECT attendance_id, submitted
+      FROM attendance
+      WHERE student_rollno = $1
+        AND timetable_id = $2
+        AND attendance_date = $3
+      `,
+      [student_rollno, timetable_id, attendance_date]
     );
 
-    if (existing.rows.length > 0) {
-      const record = existing.rows[0];
-
-      if (record.submitted) {
+    if (existing.rows.length) {
+      if (existing.rows[0].submitted) {
         return res.status(400).json({
           success: false,
-          message: "Attendance already submitted. Cannot update."
+          message: "Attendance already submitted"
         });
       }
 
-      // Update if not submitted yet
       await pool.query(
-        `UPDATE attendance
-         SET status = $1, teacher_id = $2
-         WHERE attendance_id = $3`,
-        [status, teacher_id, record.attendance_id]
+        `
+        UPDATE attendance
+        SET status = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE attendance_id = $2
+        `,
+        [status, existing.rows[0].attendance_id]
       );
     } else {
-      // Insert new attendance record
       await pool.query(
-        `INSERT INTO attendance (student_rollno, subject_id, teacher_id, timetable_id, status, attendance_date, submitted)
-         VALUES ($1, $2, $3, $4, $5, $6, false)`,
-        [student_rollno, subject_id, teacher_id, timetable_id, status, attendance_date]
+        `
+        INSERT INTO attendance 
+        (student_rollno, timetable_id, status, attendance_date)
+        VALUES ($1, $2, $3, $4)
+        `,
+        [student_rollno, timetable_id, status, attendance_date]
       );
     }
 
-    res.json({ success: true, message: "Attendance saved (not locked yet)" });
+    res.json({ success: true });
+
   } catch (err) {
-    console.error("Error marking attendance:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error(err);
+    res.status(500).json({ success: false });
   }
 };
 
+
 // Submit (lock) attendance for a subject and timetable slot
 export const submitAttendance = async (req, res) => {
-  const { subject_id, timetable_id, attendance_date } = req.body;
-  const teacher_id = req.user.id;
+  const { timetable_id, attendance_date } = req.body;
 
   try {
-    await pool.query(
-      `UPDATE attendance
-       SET submitted = true
-       WHERE subject_id = $1 AND timetable_id = $2 AND attendance_date = $3 AND teacher_id = $4`,
-      [subject_id, timetable_id, attendance_date, teacher_id]
+    const tt = await pool.query(
+      `
+      SELECT lecture_type, class_id, batch_id
+      FROM timetable
+      WHERE timetable_id = $1
+      `,
+      [timetable_id]
     );
 
-    res.json({ success: true, message: "Attendance submitted and locked." });
+    const { lecture_type, class_id, batch_id } = tt.rows[0];
+
+    let insertQuery;
+    let params;
+
+    if (lecture_type === "LECTURE") {
+      insertQuery = `
+        INSERT INTO attendance (student_rollno, timetable_id, status, attendance_date)
+        SELECT s.student_rollno, $1, 'Present', $2
+        FROM students s
+        WHERE s.class_id = $3
+        AND NOT EXISTS (
+          SELECT 1 FROM attendance a
+          WHERE a.student_rollno = s.student_rollno
+            AND a.timetable_id = $1
+            AND a.attendance_date = $2
+        )
+      `;
+      params = [timetable_id, attendance_date, class_id];
+    } else {
+      insertQuery = `
+        INSERT INTO attendance (student_rollno, timetable_id, status, attendance_date)
+        SELECT s.student_rollno, $1, 'Present', $2
+        FROM students s
+        JOIN student_batches sb ON sb.student_rollno = s.student_rollno
+        WHERE sb.batch_id = $3
+        AND NOT EXISTS (
+          SELECT 1 FROM attendance a
+          WHERE a.student_rollno = s.student_rollno
+            AND a.timetable_id = $1
+            AND a.attendance_date = $2
+        )
+      `;
+      params = [timetable_id, attendance_date, batch_id];
+    }
+
+    await pool.query(insertQuery, params);
+
+    await pool.query(
+      `
+      UPDATE attendance
+      SET submitted = true
+      WHERE timetable_id = $1
+        AND attendance_date = $2
+      `,
+      [timetable_id, attendance_date]
+    );
+
+    res.json({ success: true, message: "Attendance locked" });
+
   } catch (err) {
-    console.error("Error submitting attendance:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error(err);
+    res.status(500).json({ success: false });
   }
 };

@@ -1,4 +1,3 @@
-// src/db/init.js
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -10,336 +9,207 @@ const __dirname = path.dirname(__filename);
 
 async function initDB() {
   const client = await pool.connect();
+
   try {
-    console.log("🔄 Initializing database...");
-    
-    // Test database connection
-    const connectionTest = await client.query('SELECT NOW()');
-    console.log("✅ Database connection successful:", connectionTest.rows[0].now);
+    console.log("🚀 Initializing database...");
+    await client.query("BEGIN");
 
-    // Load schema.sql file (same folder as init.js)
-    const schemaPath = path.join(__dirname, "schema.sql");
-    console.log("📁 Reading schema from:", schemaPath);
-    
-    if (!fs.existsSync(schemaPath)) {
-      throw new Error(`Schema file not found at: ${schemaPath}`);
-    }
-    
-    const schema = fs.readFileSync(schemaPath, "utf-8");
-    console.log("📄 Schema file loaded successfully");
+    /* =========================
+       1️⃣ RUN FULL SCHEMA
+    ========================= */
+    const schema = fs.readFileSync(
+      path.join(__dirname, "schema.sql"),
+      "utf-8"
+    );
+    await client.query(schema);
+    console.log("✅ Schema executed");
 
-    // Extract CREATE TABLE statements using regex
-    const createTableRegex = /CREATE TABLE IF NOT EXISTS \w+[\s\S]*?\);/gi;
-    const queries = schema.match(createTableRegex) || [];
+    /* =========================
+       2️⃣ TEACHERS
+    ========================= */
+//     const teachers = [
+//       ["Dr. Krishna Singhal", "krishna.singal@ltce.in"],
+//       ["Prof. Neha Verma", "neha@college.edu"],
+//       ["Prof. Rahul Patil", "rahul@college.edu"],
+//       ["Dr. Sneha Kulkarni", "sneha@college.edu"],
+//       ["Prof. Kiran Joshi", "kiran@college.edu"]
+//     ];
 
-    console.log(`🔍 Found ${queries.length} SQL queries to execute`);
+//     for (const [name, email] of teachers) {
+//       const hash = await bcrypt.hash("Teacher123", 10);
+//       await client.query(
+//         `INSERT INTO teachers (name,email,password)
+//          VALUES ($1,$2,$3)
+//          ON CONFLICT (email) DO NOTHING`,
+//         [name, email, hash]
+//       );
+//     }
 
-    for (let i = 0; i < queries.length; i++) {
-      const query = queries[i].trim();
-      try {
-        console.log(`⚡ Executing query ${i + 1}/${queries.length}`);
-        await client.query(query);
-        
-        // Extract table name if it's a CREATE TABLE query
-        if (/CREATE TABLE/i.test(query)) {
-          const match = query.match(/CREATE TABLE (?:IF NOT EXISTS )?(\w+)/i);
-          if (match) {
-            console.log(`✅ Table created/verified: ${match[1]}`);
-          }
-        }
-      } catch (queryError) {
-        console.error(`❌ Error executing query ${i + 1}:`, queryError.message);
-        console.error("Query:", query);
-        throw queryError;
-      }
-    }
+//     /* =========================
+//        3️⃣ CLASSES
+//     ========================= */
+//     const classes = [
+//       ["SE", "Comps-A"],
+//       ["SE", "IT-B"],
+//       ["TE", "Comps-A"],
+//       ["BE", "Comps-A"]
+//     ];
 
-    // Insert dummy students data with hashed passwords
-    const studentDummyData = [
-      {
-        name: 'Krishna Patel',
-        class: 'SE',
-        div: 'A',
-        email: 'krishnapatel_comp_2024@ltce.in',
-        password: 'Password123'
-      },
-      {
-        name: 'Sahil Kadam',
-        class: 'SE',
-        div: 'A',
-        email: 'sahilkadam_comp_2024@ltce.in',
-        password: 'Password123'
-      },
-      {
-        name: 'Kushal Dubey',
-        class: 'SE',
-        div: 'A',
-        email: 'kushaldubey_comp_2024@ltce.in',
-        password: 'Password123'
-      },
-      {
-        name: 'Dewarat Singh',
-        class: 'SE',
-        div: 'A',
-        email: 'dewaratsingh_comp_2024@ltce.in',
-        password: 'Password123'
-      }
-    ];
+//     for (const c of classes) {
+//       await client.query(
+//         `INSERT INTO classes (year,branch)
+//          VALUES ($1,$2)
+//          ON CONFLICT DO NOTHING`,
+//         c
+//       );
+//     }
 
-    console.log("🔄 Inserting student dummy data...");
-    
-    for (const student of studentDummyData) {
-      try {
-        // Hash the password
-        const hashedPassword = await bcrypt.hash(student.password, 10);
-        
-        // Insert student with hashed password
-        await client.query(
-          `INSERT INTO students (name, class, div, email, password)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (email) DO UPDATE SET
-           name = EXCLUDED.name,
-           class = EXCLUDED.class,
-           div = EXCLUDED.div,
-           password = EXCLUDED.password`,
-          [student.name, student.class, student.div, student.email, hashedPassword]
-        );
-        console.log(`✅ Student inserted/updated: ${student.name} (${student.email})`);
-      } catch (studentError) {
-        console.error(`❌ Error inserting student ${student.name}:`, studentError.message);
-      }
-    }
+//     /* =========================
+//        4️⃣ STUDENTS
+//     ========================= */
+//     const students = [
+//       ["Krishna Patel", "krishnapatel_comp_2024@ltce.in", "SE", "Comps-A"],
+//       ["Aman Joshi", "aman@college.edu", "SE", "Comps-A"],
+//       ["Riya Mehta", "riya@college.edu", "SE", "Comps-A"],
+//       ["Snehal Deshmukh", "snehal@college.edu", "SE", "IT-B"],
+//       ["Rohit Kale", "rohit@college.edu", "SE", "IT-B"],
+//       ["Aditya Singh", "aditya@college.edu", "TE", "Comps-A"],
+//       ["Pooja Nair", "pooja@college.edu", "TE", "Comps-A"],
+//       ["Omkar Kulkarni", "omkar@college.edu", "BE", "Comps-A"]
+//     ];
 
-    // Insert dummy teacher data
-    const teacherDummyData = [
-      {
-        name: 'Dr. Krishna Singal',
-        email: 'krishna.singal@ltce.in',
-        password: 'Teacher123'
-      },
-      {
-        name: 'Prof. Sanjay D. Naravadkar',
-        email: 'sanjay.naravadkar@ltce.in',
-        password: 'Teacher123'
-      },
-      {
-        name: 'Dr. Smita A. Attarde',
-        email: 'smita.attarde@ltce.in',
-        password: 'Teacher123'
-      },
-      {
-        name: 'Prof. Asif Sayyad',
-        email: 'asif.sayyad@ltce.in',
-        password: 'Teacher123'
-      },
-      {
-        name: 'Prof. Shivani Awasthi',
-        email: 'shivani.awasthi@ltce.in',
-        password: 'Teacher123'
-      },
-      {
-        name: 'Prof. Pranjali V. Gurnule',
-        email: 'pranjali.gurnule@ltce.in',
-        password: 'Teacher123'
-      },
-      {
-        name: 'Prof. Shital K. Dhamal',
-        email: 'shital.dhamal@ltce.in',
-        password: 'Teacher123'
-      },
-      {
-        name: 'Prof. Chitra S. Ramteke',
-        email: 'chitra.ramteke@ltce.in',
-        password: 'Teacher123'
-      }
-    ];
+//     for (const [name, email, year, branch] of students) {
+//       const cls = await client.query(
+//         `SELECT class_id FROM classes WHERE year=$1 AND branch=$2`,
+//         [year, branch]
+//       );
+//       const hash = await bcrypt.hash("Password123", 10);
 
-    console.log("🔄 Inserting teacher dummy data...");
-    
-    for (const teacher of teacherDummyData) {
-      try {
-        // Hash the password
-        const hashedPassword = await bcrypt.hash(teacher.password, 10);
-        
-        // Insert teacher with hashed password
-        await client.query(
-          `INSERT INTO teachers (name, email, password)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (email) DO UPDATE SET
-           name = EXCLUDED.name,
-           password = EXCLUDED.password`,
-          [teacher.name, teacher.email, hashedPassword]
-        );
-        console.log(`✅ Teacher inserted/updated: ${teacher.name} (${teacher.email})`);
-      } catch (teacherError) {
-        console.error(`❌ Error inserting teacher ${teacher.name}:`, teacherError.message);
-      }
-    }
+//       await client.query(
+//         `INSERT INTO students (name,email,password,class_id)
+//          VALUES ($1,$2,$3,$4)
+//          ON CONFLICT (email) DO NOTHING`,
+//         [name, email, hash, cls.rows[0].class_id]
+//       );
+//     }
 
-    // Insert dummy subjects data
-    const subjectDummyData = [
-      {
-        subject_name: 'Mathematics for Computer Science (MCS)',
-        teacher_email: 'krishna.singal@ltce.in'
-      },
-      {
-        subject_name: 'Computer Organization and Architecture (COA)',
-        teacher_email: 'sanjay.naravadkar@ltce.in'
-      },
-      {
-        subject_name: 'Analysis of Algorithm (AOA)',
-        teacher_email: 'smita.attarde@ltce.in'
-      },
-      {
-        subject_name: 'Open Elective-I: Indian Constitution and Governance (OE-I)',
-        teacher_email: 'asif.sayyad@ltce.in'
-      },
-      {
-        subject_name: 'Entrepreneurship & Financial Management (EFM)',
-        teacher_email: 'shivani.awasthi@ltce.in'
-      },
-      {
-        subject_name: 'Entrepreneurship & Sustainability (E&S)',
-        teacher_email: 'pranjali.gurnule@ltce.in'
-      },
-      {
-        subject_name: 'Full Stack Java Programming (FSJP)',
-        teacher_email: 'shital.dhamal@ltce.in'
-      },
-      {
-        subject_name: 'Computer Organization and Architecture Lab (COAL)',
-        teacher_email: 'sanjay.naravadkar@ltce.in'
-      },
-      {
-        subject_name: 'Analysis of Algorithm Lab (AOAL)',
-        teacher_email: 'smita.attarde@ltce.in'
-      },
-      {
-        subject_name: 'Full Stack Java Programming Lab (FSJPL)',
-        teacher_email: 'shital.dhamal@ltce.in'
-      }
-    ];
+//     /* =========================
+//        5️⃣ SUBJECTS
+//     ========================= */
+//     const subjects = [
+//       "Data Structures",
+//       "DBMS",
+//       "Operating Systems",
+//       "Computer Networks",
+//       "Machine Learning"
+//     ];
 
-    console.log("🔄 Inserting subject dummy data...");
-    
-    for (const subject of subjectDummyData) {
-      try {
-        // Get teacher ID by email
-        const teacherResult = await client.query(
-          'SELECT teacher_id FROM teachers WHERE email = $1',
-          [subject.teacher_email]
-        );
-        
-        if (teacherResult.rows.length > 0) {
-          const teacherId = teacherResult.rows[0].teacher_id;
-          await client.query(
-            `INSERT INTO subjects (subject_name, teacher_id)
-             VALUES ($1, $2)
-             ON CONFLICT DO NOTHING`,
-            [subject.subject_name, teacherId]
-          );
-          console.log(`✅ Subject inserted: ${subject.subject_name}`);
-        } else {
-          console.error(`❌ Teacher not found for subject ${subject.subject_name}: ${subject.teacher_email}`);
-        }
-      } catch (subjectError) {
-        console.error(`❌ Error inserting subject ${subject.subject_name}:`, subjectError.message);
-      }
-    }
+//     for (const subject of subjects) {
+//       await client.query(
+//         `INSERT INTO subjects (subject_name)
+//          VALUES ($1)
+//          ON CONFLICT DO NOTHING`,
+//         [subject]
+//       );
+//     }
 
-    // Insert dummy timetable data
-    const timetableDummyData = [
-      // Monday
-      { class_name: 'SE', subject_name: 'Entrepreneurship & Sustainability (E&S)', day_of_week: 'Monday', lecture_no: 1 },
-      { class_name: 'SE', subject_name: 'Entrepreneurship & Financial Management (EFM)', day_of_week: 'Monday', lecture_no: 2 },
-      { class_name: 'SE', subject_name: 'Analysis of Algorithm (AOA)', day_of_week: 'Monday', lecture_no: 3 },
-      { class_name: 'SE', subject_name: 'Mathematics for Computer Science (MCS)', day_of_week: 'Monday', lecture_no: 4 },
-      { class_name: 'SE', subject_name: 'Analysis of Algorithm Lab (AOAL)', day_of_week: 'Monday', lecture_no: 5 },
-      { class_name: 'SE', subject_name: 'Full Stack Java Programming Lab (FSJPL)', day_of_week: 'Monday', lecture_no: 6 },
-      { class_name: 'SE', subject_name: 'Computer Organization and Architecture Lab (COAL)', day_of_week: 'Monday', lecture_no: 7 },
-      
-      // Tuesday
-      { class_name: 'SE', subject_name: 'Mathematics for Computer Science (MCS)', day_of_week: 'Tuesday', lecture_no: 1 },
-      { class_name: 'SE', subject_name: 'Full Stack Java Programming (FSJP)', day_of_week: 'Tuesday', lecture_no: 2 },
-      { class_name: 'SE', subject_name: 'Entrepreneurship & Sustainability (E&S)', day_of_week: 'Tuesday', lecture_no: 3 },
-      { class_name: 'SE', subject_name: 'Open Elective-I: Indian Constitution and Governance (OE-I)', day_of_week: 'Tuesday', lecture_no: 4 },
-      { class_name: 'SE', subject_name: 'Analysis of Algorithm (AOA)', day_of_week: 'Tuesday', lecture_no: 5 },
-      
-      // Wednesday
-      { class_name: 'SE', subject_name: 'Analysis of Algorithm (AOA)', day_of_week: 'Wednesday', lecture_no: 1 },
-      { class_name: 'SE', subject_name: 'Mathematics for Computer Science (MCS)', day_of_week: 'Wednesday', lecture_no: 2 },
-      { class_name: 'SE', subject_name: 'Full Stack Java Programming (FSJP)', day_of_week: 'Wednesday', lecture_no: 3 },
-      { class_name: 'SE', subject_name: 'Open Elective-I: Indian Constitution and Governance (OE-I)', day_of_week: 'Wednesday', lecture_no: 4 },
-      { class_name: 'SE', subject_name: 'Computer Organization and Architecture (COA)', day_of_week: 'Wednesday', lecture_no: 5 },
-      
-      // Thursday
-      { class_name: 'SE', subject_name: 'Entrepreneurship & Financial Management (EFM)', day_of_week: 'Thursday', lecture_no: 1 },
-      { class_name: 'SE', subject_name: 'Computer Organization and Architecture (COA)', day_of_week: 'Thursday', lecture_no: 2 },
-      { class_name: 'SE', subject_name: 'Open Elective-I: Indian Constitution and Governance (OE-I)', day_of_week: 'Thursday', lecture_no: 4 },
-      { class_name: 'SE', subject_name: 'Full Stack Java Programming Lab (FSJPL)', day_of_week: 'Thursday', lecture_no: 5 },
-      { class_name: 'SE', subject_name: 'Analysis of Algorithm Lab (AOAL)', day_of_week: 'Thursday', lecture_no: 6 },
-      { class_name: 'SE', subject_name: 'Computer Organization and Architecture Lab (COAL)', day_of_week: 'Thursday', lecture_no: 7 },
-      
-      // Friday
-      { class_name: 'SE', subject_name: 'Computer Organization and Architecture (COA)', day_of_week: 'Friday', lecture_no: 1 },
-      { class_name: 'SE', subject_name: 'Computer Organization and Architecture Lab (COAL)', day_of_week: 'Friday', lecture_no: 2 },
-      { class_name: 'SE', subject_name: 'Full Stack Java Programming Lab (FSJPL)', day_of_week: 'Friday', lecture_no: 3 },
-      { class_name: 'SE', subject_name: 'Analysis of Algorithm Lab (AOAL)', day_of_week: 'Friday', lecture_no: 4 }
-    ];
+//     /* =========================
+//        6️⃣ TEACHER ↔ SUBJECT (M:N)
+//     ========================= */
+//     await client.query(`
+//       INSERT INTO teacher_subjects (teacher_id, subject_id)
+//       SELECT t.teacher_id, s.subject_id
+//       FROM teachers t, subjects s
+//       WHERE
+//         (t.email='amit@college.edu' AND s.subject_name IN ('Data Structures','Operating Systems'))
+//         OR (t.email='neha@college.edu' AND s.subject_name IN ('DBMS','Data Structures'))
+//         OR (t.email='rahul@college.edu' AND s.subject_name='Computer Networks')
+//         OR (t.email='sneha@college.edu' AND s.subject_name='Machine Learning')
+//         OR (t.email='kiran@college.edu' AND s.subject_name='DBMS')
+//       ON CONFLICT DO NOTHING
+//     `);
 
-    console.log("🔄 Inserting timetable dummy data...");
-    
-    for (const timetable of timetableDummyData) {
-      try {
-        // Get subject and teacher IDs
-        const subjectResult = await client.query(
-          'SELECT subject_id, teacher_id FROM subjects WHERE subject_name = $1',
-          [timetable.subject_name]
-        );
-        
-        if (subjectResult.rows.length > 0) {
-          const { subject_id, teacher_id } = subjectResult.rows[0];
-          await client.query(
-            `INSERT INTO timetable (class_name, subject_id, teacher_id, day_of_week, lecture_no)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT DO NOTHING`,
-            [timetable.class_name, subject_id, teacher_id, timetable.day_of_week, timetable.lecture_no]
-          );
-          console.log(`✅ Timetable inserted: ${timetable.class_name} - ${timetable.day_of_week} Lecture ${timetable.lecture_no}`);
-        } else {
-          console.error(`❌ Subject not found for timetable: ${timetable.subject_name}`);
-        }
-      } catch (timetableError) {
-        console.error(`❌ Error inserting timetable:`, timetableError.message);
-      }
-    }
+//     /* =========================
+//        7️⃣ BATCHES
+//     ========================= */
+//     await client.query(`
+//       INSERT INTO batches (class_id,batch_name)
+//       SELECT c.class_id, b.batch
+//       FROM classes c,
+//            (VALUES ('SE','Comps-A','A1'),('SE','Comps-A','A2'),
+//                    ('SE','IT-B','B1'),
+//                    ('TE','Comps-A','A1'),('TE','Comps-A','A2'),
+//                    ('BE','Comps-A','A1')) AS b(year,branch,batch)
+//       WHERE c.year=b.year AND c.branch=b.branch
+//       ON CONFLICT DO NOTHING
+//     `);
 
-    // Count users
-    const students = await client.query("SELECT COUNT(*) FROM students");
-    const teachers = await client.query("SELECT COUNT(*) FROM teachers");
-    const subjects = await client.query("SELECT COUNT(*) FROM subjects");
-    const timetable = await client.query("SELECT COUNT(*) FROM timetable");
+//     /* =========================
+//        8️⃣ STUDENT ↔ BATCH
+//     ========================= */
+//     await client.query(`
+//       INSERT INTO student_batches (student_rollno,batch_id)
+//       SELECT s.student_rollno, b.batch_id
+//       FROM students s
+//       JOIN batches b ON b.class_id=s.class_id
+//       WHERE
+//         (s.name IN ('Krishna Patil','Aman Joshi') AND b.batch_name='A1')
+//         OR (s.name='Riya Mehta' AND b.batch_name='A2')
+//         OR (s.name IN ('Snehal Deshmukh','Rohit Kale'))
+//         OR (s.name='Aditya Singh' AND b.batch_name='A1')
+//         OR (s.name='Pooja Nair' AND b.batch_name='A2')
+//         OR (s.name='Omkar Kulkar')
+//       ON CONFLICT DO NOTHING
+//     `);
 
-    console.log(`📊 Students in DB: ${students.rows[0].count}`);
-    console.log(`📊 Teachers in DB: ${teachers.rows[0].count}`);
-    console.log(`📊 Subjects in DB: ${subjects.rows[0].count}`);
-    console.log(`📊 Timetable entries in DB: ${timetable.rows[0].count}`);
+//     /* =========================
+//        9️⃣ TIMETABLE (MULTI CLASS)
+//     ========================= */
+//     await client.query(`
+//       INSERT INTO timetable
+// (class_id, subject_id, teacher_id, day_of_week, lecture_no, lecture_type, batch_id, academic_year)
+// SELECT
+//   c.class_id,
+//   s.subject_id,
+//   ts.teacher_id,
+//   d.day,
+//   d.lecture,
+//   d.type,
+//   CASE 
+//     WHEN d.type = 'PRACTICAL' THEN b.batch_id
+//     ELSE NULL
+//   END,
+//   '2024-25'
+// FROM (
+//   VALUES
+//     ('SE','Comps-A','Data Structures','Monday',1,'LECTURE'),
+//     ('SE','Comps-A','Data Structures','Tuesday',5,'PRACTICAL'),
+//     ('TE','Comps-A','DBMS','Wednesday',2,'LECTURE'),
+//     ('BE','Comps-A','Machine Learning','Thursday',6,'PRACTICAL')
+// ) AS d(year, branch, subject, day, lecture, type)
+// JOIN classes c
+//   ON c.year = d.year AND c.branch = d.branch
+// JOIN subjects s
+//   ON s.subject_name = d.subject
+// JOIN teacher_subjects ts
+//   ON ts.subject_id = s.subject_id
+// LEFT JOIN batches b
+//   ON b.class_id = c.class_id
+//  AND d.type = 'PRACTICAL';
+//     `);
 
-    console.log("🎉 Database initialized successfully!");
-    return true;
+    await client.query("COMMIT");
+    console.log("🎉 Database initialized successfully");
   } catch (err) {
-    console.error("❌ Error initializing database:", err);
-    console.error("Stack trace:", err.stack);
-    return false;
+    await client.query("ROLLBACK");
+    console.error("❌ Init failed:", err);
   } finally {
     client.release();
   }
 }
 
-// Export the function for use in other files
 export default initDB;
 
-// Only run if this file is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   initDB();
 }

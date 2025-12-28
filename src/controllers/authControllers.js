@@ -71,5 +71,5 @@ export const logout = async (_req, res) => {
     }; 
      
      
-export const validateUser = async (req, res) => { // This endpoint MUST be protected by verifyToken in routes 
+export const validateUser = async (req, res) => { 
      res.json({ success: true, user: req.user }); };

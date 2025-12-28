@@ -69,8 +69,8 @@ app.get('/', (req, res) => {
 
 
 app.use("/api/auth", authRoutes);
-app.use("/api/teacher", teacherRoutes);  // inside teacherRoutes, DO NOT start paths with /teacher
-app.use("/api/student", studentRoutes);  // inside studentRoutes, DO NOT start paths with /student
+app.use("/api/teacher", teacherRoutes);
+app.use("/api/student", studentRoutes);  
 app.use("/api/timetable", timetableRoutes);
 
 const PORT = process.env.PORT || 3000;
