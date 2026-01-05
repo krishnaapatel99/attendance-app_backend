@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS teachers (
-  teacher_id SERIAL PRIMARY KEY,
+  teacher_id VARCHAR(20) PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   email VARCHAR(100) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL
@@ -10,20 +10,20 @@ CREATE TABLE IF NOT EXISTS classes (
   branch VARCHAR(50) NOT NULL     -- Comps-A, IT-B
 );
 CREATE TABLE IF NOT EXISTS students (
-  student_rollno SERIAL PRIMARY KEY,
+  student_rollno VARCHAR(20) PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   class_id INT NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
   email VARCHAR(100) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL
 );
 CREATE TABLE IF NOT EXISTS subjects (
-  subject_id SERIAL PRIMARY KEY,
+  subject_id VARCHAR(20) PRIMARY KEY,
   subject_name VARCHAR(100) NOT NULL
 );
 CREATE TABLE IF NOT EXISTS teacher_subjects (
   teacher_subject_id SERIAL PRIMARY KEY,
-  teacher_id INT NOT NULL REFERENCES teachers(teacher_id) ON DELETE CASCADE,
-  subject_id INT NOT NULL REFERENCES subjects(subject_id) ON DELETE CASCADE,
+  teacher_id VARCHAR(20) NOT NULL REFERENCES teachers(teacher_id) ON DELETE CASCADE,
+  subject_id VARCHAR(20) NOT NULL REFERENCES subjects(subject_id) ON DELETE CASCADE,
   UNIQUE (teacher_id, subject_id)
 );
 CREATE TABLE IF NOT EXISTS batches (
@@ -32,15 +32,15 @@ CREATE TABLE IF NOT EXISTS batches (
   batch_name VARCHAR(10) NOT NULL  -- A1, A2, A3
 );
  CREATE TABLE IF NOT EXISTS student_batches (
-  student_rollno INT REFERENCES students(student_rollno) ON DELETE CASCADE,
+  student_rollno VARCHAR(20) REFERENCES students(student_rollno) ON DELETE CASCADE,
   batch_id INT REFERENCES batches(batch_id) ON DELETE CASCADE,
   PRIMARY KEY (student_rollno, batch_id)
 );
 CREATE TABLE IF NOT EXISTS timetable (
   timetable_id SERIAL PRIMARY KEY,
   class_id INT NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
-  subject_id INT NOT NULL REFERENCES subjects(subject_id) ON DELETE CASCADE,
-  teacher_id INT NOT NULL REFERENCES teachers(teacher_id) ON DELETE CASCADE,
+  subject_id VARCHAR(20) NOT NULL REFERENCES subjects(subject_id) ON DELETE CASCADE,
+  teacher_id VARCHAR(20) NOT NULL REFERENCES teachers(teacher_id) ON DELETE CASCADE,
   day_of_week VARCHAR(10) CHECK (
     day_of_week IN ('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday')
   ),
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS timetable (
 );
 CREATE TABLE IF NOT EXISTS attendance (
   attendance_id SERIAL PRIMARY KEY,
-  student_rollno INT NOT NULL REFERENCES students(student_rollno) ON DELETE CASCADE,
+  student_rollno VARCHAR(20) NOT NULL REFERENCES students(student_rollno) ON DELETE CASCADE,
   timetable_id INT NOT NULL REFERENCES timetable(timetable_id) ON DELETE CASCADE,
   status VARCHAR(10) CHECK (
     status IN ('Present', 'Absent', 'Late')
