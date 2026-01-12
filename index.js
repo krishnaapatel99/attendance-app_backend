@@ -3,6 +3,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 
+
 import authRoutes from "./src/routes/authRoutes.js";
 import teacherRoutes from "./src/routes/teacherRoutes.js";
 import studentRoutes from "./src/routes/studentRoutes.js";
@@ -74,6 +75,7 @@ app.use("/api/student", studentRoutes);
 app.use("/api/timetable", timetableRoutes);
 
 const PORT = process.env.PORT || 3000;
+
 
 // Initialize database and start server
 async function startServer() {

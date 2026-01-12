@@ -44,11 +44,13 @@ export const handleLogin = async (req, res) => {
       { expiresIn: "1h" }
     );
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-    });
+   res.cookie("token", token, {
+  httpOnly: true,
+  secure: true, 
+  sameSite: "none",
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+});
+
 
     res.json({
       success: true,
@@ -67,8 +69,14 @@ export const handleLogin = async (req, res) => {
 
 
 export const logout = async (_req, res) => {
-     res.clearCookie("token").json({ success: true }); 
-    }; 
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+  });
+  res.json({ success: true });
+};
+ 
      
      
 export const validateUser = async (req, res) => { 
