@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS students (
   student_rollno VARCHAR(20) PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   class_id INT NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
-  email VARCHAR(100) UNIQUE NOT NULL,
+  email VARCHAR(100) UNIQUE ,
   password VARCHAR(255) NOT NULL
 );
 CREATE TABLE IF NOT EXISTS subjects (
@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS attendance (
     attendance_date
   )
 );
+ALTER TABLE students
+ADD COLUMN refresh_token_hash TEXT,
+ADD COLUMN refresh_token_expires TIMESTAMP;
+
+ALTER TABLE teachers
+ADD COLUMN refresh_token_hash TEXT,
+ADD COLUMN refresh_token_expires TIMESTAMP;
+
 
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(attendance_date);
 CREATE INDEX IF NOT EXISTS idx_timetable_teacher ON timetable(teacher_id);

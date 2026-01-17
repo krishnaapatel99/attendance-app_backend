@@ -6,7 +6,7 @@ import {
   getStudentsForAttendance,
   getAttendanceData
 } from "../controllers/teacherAttendanceController.js";
-import { verifyToken } from "../middlewares/authMiddleware.js";
+import verifyToken  from "../middlewares/authMiddleware.js";
 import { requireTeacher } from "../middlewares/userMiddleware.js";
 import { getTeacherProfile } from "../controllers/teacherHomeController.js";
 

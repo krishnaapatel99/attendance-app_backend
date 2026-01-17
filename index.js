@@ -16,32 +16,23 @@ const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://attendance-app1-three.vercel.app",
+];
+
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
+  origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    
-    // Allow localhost and your hosted frontend
-    const allowedOrigins = [
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'https://attendance-app1-three.vercel.app', // Remove trailing slash
-      // Add more domains as needed
-    ];
-    
     if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
+      return callback(null, origin); // IMPORTANT
     }
-    
-    // For development, you might want to allow all origins
-    // return callback(null, true);
-    
-    // Log the rejected origin for debugging
-    console.log(`❌ CORS blocked origin: ${origin}`);
-    return callback(new Error('Not allowed by CORS'));
+    return callback(new Error("Not allowed by CORS"));
   },
-  credentials: true, // Enable credentials for secure authentication
+  credentials: true,
 }));
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {

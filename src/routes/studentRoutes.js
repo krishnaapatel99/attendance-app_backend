@@ -1,7 +1,7 @@
 // src/routes/studentRoutes.js
 import express from "express";
 import { getStudentProfile } from "../controllers/studentHomeController.js";
-import { verifyToken } from "../middlewares/authMiddleware.js";
+import verifyToken from "../middlewares/authMiddleware.js";
 import { requireStudent } from "../middlewares/userMiddleware.js";
 import {
   getOverallAttendance,

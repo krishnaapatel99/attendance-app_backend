@@ -3,7 +3,7 @@ import {
  getStudentWeeklyTimetable,
  getTeacherWeeklyTimetable
 } from "../controllers/timetableController.js";
-import { verifyToken } from "../middlewares/authMiddleware.js";
+import verifyToken from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 

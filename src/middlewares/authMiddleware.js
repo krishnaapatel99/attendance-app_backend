@@ -1,37 +1,39 @@
-// middleware/auth.js
+// middleware/verifyToken.js
 import jwt from "jsonwebtoken";
 
-export const verifyToken = (req, res, next) => {
+const verifyToken = (req, res, next) => {
   try {
-    const token =
-      req.cookies.token || req.headers.authorization?.split(" ")[1];
+    // ✅ Read access token from cookie
+    const accessToken = req.cookies?.accessToken;
 
-    if (!token) {
+    if (!accessToken) {
       return res.status(401).json({
         success: false,
-        message: "Access token required",
+        message: "Access token missing",
       });
     }
 
-    // Decode & verify JWT
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // ✅ Verify access token
+    const decoded = jwt.verify(
+      accessToken,
+      process.env.JWT_SECRET
+    );
 
-    // Attach payload directly
+ 
     req.user = {
       id: decoded.id,
       role: decoded.role,
-      name: decoded.name,
-      email: decoded.email,
     };
-
-    req.token = token;
 
     next();
   } catch (error) {
-    console.error("Auth error:", error);
-    res.status(401).json({
+
+
+    return res.status(401).json({
       success: false,
-      message: "Invalid or expired token",
+      message: "Invalid or expired access token",
     });
   }
 };
+
+export default verifyToken;
