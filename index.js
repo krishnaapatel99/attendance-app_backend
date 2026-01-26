@@ -8,7 +8,10 @@ import authRoutes from "./src/routes/authRoutes.js";
 import teacherRoutes from "./src/routes/teacherRoutes.js";
 import studentRoutes from "./src/routes/studentRoutes.js";
 import timetableRoutes from "./src/routes/timetableRoutes.js";
+import insertDataRoutes from "./src/routes/insertDataRoutes.js";
+import otpRoutes from "./src/routes/otpRoutes.js";
 import initDB from "./src/db/init.js";
+import emailRoutes from "./src/routes/emailRoute.js";
 
 dotenv.config();
 
@@ -64,7 +67,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/teacher", teacherRoutes);
 app.use("/api/student", studentRoutes);  
 app.use("/api/timetable", timetableRoutes);
-
+app.use("/api/insertData", insertDataRoutes);
+app.use("/api/otp", otpRoutes);
+app.use("/api/email", emailRoutes);
 const PORT = process.env.PORT || 3000;
 
 

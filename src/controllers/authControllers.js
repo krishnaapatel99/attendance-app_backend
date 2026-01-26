@@ -26,27 +26,32 @@ const generateRefreshToken = (user) =>
 
 
 export const handleLogin = async (req, res) => {
-  const { email, password } = req.body; 
+  const { email, password, role } = req.body; 
 
   try {
     
-    let result = await pool.query(
-      `SELECT student_rollno AS id, name, password, 'student' AS role
-       FROM students
-       WHERE student_rollno = $1`,
-      [email]
-    );
+    let result;
 
-    
-    if (result.rows.length === 0) {
+    if (role === "student") {
+      result = await pool.query(
+        `SELECT student_rollno AS id, name, email, email_verified, password, 'student' AS role
+         FROM students
+         WHERE student_rollno = $1`,
+        [email]
+      );
+    } else if (role === "teacher") {
       result = await pool.query(
         `SELECT teacher_id AS id, name, email, password, 'teacher' AS role
          FROM teachers
          WHERE email = $1`,
         [email]
       );
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role",
+      });
     }
-
     if (result.rows.length === 0) {
       return res.status(401).json({
         success: false,
@@ -113,6 +118,8 @@ export const handleLogin = async (req, res) => {
         id: user.id,
         name: user.name,
         role: user.role,
+        email: user.email,
+        email_verified: user.email_verified,
       },
     });
   } catch (error) {
