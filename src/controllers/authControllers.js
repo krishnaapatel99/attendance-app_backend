@@ -136,22 +136,24 @@ if (user.role === "teacher") {
       secure: isProd,
       sameSite: isProd ? "none" : "lax",
       path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
     
-    res.json({
-      success: true,
-      message: "Login successful",
-      user: {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-        email: user.email,
-        email_verified: user.email_verified,
-        advisor,
-      },
-    });
+  res.json({
+  success: true,
+  message: "Login successful",
+  user: {
+    id: user.id,
+    name: user.name,
+    role: user.role,
+    email: user.email,
+    email_verified:
+      user.role === "student" ? user.email_verified : true,
+    advisor,
+  },
+});
+
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({
@@ -322,16 +324,19 @@ if (req.user.role === "teacher") {
   };
 }
 
-    res.json({ 
+   res.json({
   success: true,
   user: {
     id: user.id,
     name: user.name,
     email: user.email,
     role: req.user.role,
-    advisor, 
-  }
+    email_verified:
+      req.user.role === "student" ? user.email_verified : true,
+    advisor,
+  },
 });
+
   } catch (error) {
     console.error("Validation error:", error);
     res.status(500).json({ success: false, message: "Internal server error" });

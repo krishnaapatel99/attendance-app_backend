@@ -85,7 +85,7 @@ export const sendForgotPasswordOtp = async (req, res) => {
 
     // 5️⃣ Send OTP email
     transporter.sendMail({
-  from: process.env.MAIL_USER,
+  from: `"Upasthit" <${process.env.MAIL_USER}>`,
   to: email,
   subject: "Password Reset OTP",
   html: `
