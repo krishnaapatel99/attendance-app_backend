@@ -78,28 +78,29 @@ export const sendForgotPasswordOtp = async (req, res) => {
       `,
       [userId, role, hashedOtp, expiresAt]
     );
-
-    // 5️⃣ Send OTP email
-    await transporter.sendMail({
-      from: process.env.MAIL_USER,
-      to: email,
-      subject: "Password Reset OTP",
-      html: `
-        <div style="font-family: Arial, sans-serif">
-          <h2>Password Reset</h2>
-          <p>Your OTP is:</p>
-          <h1 style="letter-spacing: 3px">${otp}</h1>
-          <p>This OTP will expire in 5 minutes.</p>
-          <p>If you didn’t request this, please ignore this email.</p>
-        </div>
-      `
-    });
-
-    res.json({
+ res.json({
       success: true,
       message: "OTP sent successfully"
     });
 
+    // 5️⃣ Send OTP email
+    transporter.sendMail({
+  from: process.env.MAIL_USER,
+  to: email,
+  subject: "Password Reset OTP",
+  html: `
+    <div style="font-family: Arial, sans-serif">
+      <h2>Password Reset</h2>
+      <p>Your OTP is:</p>
+      <h1 style="letter-spacing: 3px">${otp}</h1>
+      <p>This OTP will expire in 5 minutes.</p>
+    </div>
+  `,
+})
+.then(() => console.log("Forgot password OTP sent"))
+.catch(err => console.error("Forgot OTP mail error:", err));
+
+   
   } catch (error) {
     console.error("FORGOT PASSWORD OTP ERROR >>>", error);
     res.status(500).json({
@@ -272,25 +273,26 @@ export const resendForgotPasswordOtp = async (req, res) => {
       `,
       [userId, role, hashedOtp, expiresAt]
     );
-
-    // 5️⃣ Send mail
-    await transporter.sendMail({
-      from: process.env.MAIL_USER,
-      to: email,
-      subject: "Password Reset OTP",
-      html: `
-        <div>
-          <h2>Password Reset</h2>
-          <h1>${otp}</h1>
-          <p>OTP valid for 5 minutes.</p>
-        </div>
-      `
-    });
-
-    res.json({
+res.json({
       success: true,
       message: "OTP resent successfully"
     });
+    // 5️⃣ Send mail
+   transporter.sendMail({
+  from: process.env.MAIL_USER,
+  to: email,
+  subject: "Password Reset OTP",
+  html: `
+    <div>
+      <h2>Password Reset</h2>
+      <h1>${otp}</h1>
+      <p>OTP valid for 5 minutes.</p>
+    </div>
+  `,
+})
+.catch(err => console.error("Resend forgot OTP error:", err));
+
+    
 
   } catch (error) {
     console.error("RESEND OTP ERROR >>>", error);

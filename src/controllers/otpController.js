@@ -47,17 +47,18 @@ if (emailExists.rows.length > 0) {
      VALUES ($1, $2, $3, $4)`,
     [studentId, email, otp, expiresAt]
   );
-
-  await transporter.sendMail({
-    from: `"Upasthit" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: "Your OTP",
-    html: `<h2>Your OTP is ${otp}</h2>`
-  });
-
-  res.json({ message: "OTP sent" ,
+ res.json({ message: "OTP sent" ,
     success: true,
   });
+  transporter.sendMail({
+  from: `"Upasthit" <${process.env.MAIL_USER}>`,
+  to: email,
+  subject: "Your OTP",
+  html: `<h2>Your OTP is ${otp}</h2>`,
+})
+.catch(err => console.error("Email OTP error:", err));
+
+ 
  } catch (err) {
     console.error("🔥 SEND OTP ERROR:", err);
     return res.status(500).json({
@@ -176,12 +177,16 @@ export const resendOtp = async (req, res) => {
     [newOtp, expiresAt, studentId]
   );
 
-  await transporter.sendMail({
-    to: otpData.email,
-    subject: "Your New OTP",
-    html: `<h2>Your new OTP is ${newOtp}</h2>`
-  });
-
   res.json({ message: "OTP resent successfully" });
+
+transporter.sendMail({
+  to: otpData.email,
+  subject: "Your New OTP",
+  html: `<h2>Your new OTP is ${newOtp}</h2>`,
+})
+.catch(err => console.error("Resend OTP error:", err));
+
+
+  
 };
 
