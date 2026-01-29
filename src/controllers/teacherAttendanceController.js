@@ -17,6 +17,7 @@ export const getTeacherDashboard = async (req, res) => {
         t.timetable_id,
         t.lecture_no,
         t.lecture_type,
+        t.duration,
         s.subject_name,
         c.year,
         c.branch,

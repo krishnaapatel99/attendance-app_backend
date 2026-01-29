@@ -43,6 +43,7 @@ export const getStudentWeeklyTimetable = async (req, res) => {
       `SELECT
         t.day_of_week,
         t.lecture_no,
+        t.duration,
         t.lecture_type,
         s.subject_name,
         tc.name AS teacher_name,
@@ -77,17 +78,23 @@ export const getStudentWeeklyTimetable = async (req, res) => {
     const timetable = {};
 
     result.rows.forEach(row => {
-      if (!timetable[row.day_of_week]) {
-        timetable[row.day_of_week] = {};
-      }
+     if (!timetable[row.day_of_week]) {
+  timetable[row.day_of_week] = {};
+}
 
-      timetable[row.day_of_week][row.lecture_no] = {
-        subject: row.subject_name,
-        type: row.lecture_type,
-        teacher: row.teacher_name,
-        batch: row.lecture_type === "PRACTICAL" ? row.batch_name : null,
-        time: TIME_SLOTS[row.lecture_no]
-      };
+for (let i = 0; i < row.duration; i++) {
+  const slotNo = row.lecture_no + i;
+ if (!TIME_SLOTS[slotNo]) break;
+timetable[row.day_of_week][slotNo] = {
+  subject: row.subject_name,
+  type: row.lecture_type,
+  teacher: row.teacher_name,
+  batch: row.lecture_type === "PRACTICAL" ? row.batch_name : null,
+  time: TIME_SLOTS[slotNo],
+  isContinuation: i > 0,
+  parentLecture: row.lecture_no
+};
+}
     });
 
     res.json({
@@ -116,6 +123,7 @@ export const getTeacherWeeklyTimetable = async (req, res) => {
         t.day_of_week,
         t.lecture_no,
         t.lecture_type,
+        t.duration,
         s.subject_name,
         c.year,
         c.branch,
@@ -141,17 +149,24 @@ export const getTeacherWeeklyTimetable = async (req, res) => {
     const timetable = {};
 
     result.rows.forEach(row => {
-      if (!timetable[row.day_of_week]) {
-        timetable[row.day_of_week] = {};
-      }
+     if (!timetable[row.day_of_week]) {
+  timetable[row.day_of_week] = {};
+}
 
-      timetable[row.day_of_week][row.lecture_no] = {
-        subject: row.subject_name,
-        type: row.lecture_type,
-        class: `${row.year} ${row.branch}`,
-        batch: row.lecture_type === "PRACTICAL" ? row.batch_name : null,
-        time: TIME_SLOTS[row.lecture_no]
-      };
+for (let i = 0; i < row.duration; i++) {
+  const slotNo = row.lecture_no + i;
+ if (!TIME_SLOTS[slotNo]) break;
+ timetable[row.day_of_week][slotNo] = {
+  subject: row.subject_name,
+  type: row.lecture_type,
+  class: `${row.year} ${row.branch}`,
+  batch: row.lecture_type === "PRACTICAL" ? row.batch_name : null,
+  time: TIME_SLOTS[slotNo],
+  isContinuation: i > 0,
+  parentLecture: row.lecture_no
+};
+
+}
     });
 
     res.json({

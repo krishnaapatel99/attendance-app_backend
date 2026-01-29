@@ -69,3 +69,61 @@ export const importStudentsFromCSV = async (req, res) => {
       }
     });
 };
+
+
+export const importStudentBatchesFromCSV = async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ message: "CSV import disabled in prod" });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ message: "CSV file required" });
+  }
+
+  const rows = [];
+
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on("data", (row) => {
+      rows.push(row);
+    })
+    .on("end", async () => {
+      const client = await pool.connect();
+
+      try {
+        await client.query("BEGIN");
+
+        for (const row of rows) {
+          const { student_rollno, batch_id } = row;
+
+          if (!student_rollno || !batch_id) {
+            throw new Error("Invalid CSV format");
+          }
+
+          await client.query(
+            `
+            INSERT INTO student_batches (student_rollno, batch_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING
+            `,
+            [student_rollno.trim(), batch_id]
+          );
+        }
+
+        await client.query("COMMIT");
+
+        res.json({
+          message: "Student batches imported successfully",
+          count: rows.length,
+        });
+      } catch (err) {
+        await client.query("ROLLBACK");
+        console.error(err);
+        res.status(500).json({ message: "CSV import failed" });
+      } finally {
+        client.release();
+        fs.unlinkSync(req.file.path);
+      }
+    });
+};
+

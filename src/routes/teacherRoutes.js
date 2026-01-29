@@ -10,8 +10,8 @@ import verifyToken  from "../middlewares/authMiddleware.js";
 import { requireTeacher } from "../middlewares/userMiddleware.js";
 import { getTeacherProfile } from "../controllers/teacherHomeController.js";
 import { getAttendanceSummary, getAttendanceCalendar, getTeacherLectureTypeSubjects, getTeacherClassesForSubjectType, getTeacherBatchesForSubjectClass, getCurrentLectureForTeacher } from "../controllers/teacherViewAttendanceController.js";
-
-
+import {getAbsentStudentsForUpdate, updateSubmittedAttendance} from "../controllers/absentStudentsController.js";
+import {getAdvisorClassAttendance, getStudentLecturesForAdvisor, updateLecturesByAdvisor} from "../controllers/advisorController.js";
 const router = express.Router();
 
 router.get("/dashboard", verifyToken, requireTeacher, getTeacherDashboard);
@@ -26,4 +26,9 @@ router.get("/classes-for-subject-type", verifyToken, requireTeacher, getTeacherC
 router.get("/batches-for-subject-class", verifyToken, requireTeacher, getTeacherBatchesForSubjectClass);
 router.get("/attendance-summary", verifyToken, requireTeacher, getAttendanceSummary);
 router.get("/attendance-calendar", verifyToken, requireTeacher, getAttendanceCalendar);
+router.get("/absent-students",verifyToken,requireTeacher,getAbsentStudentsForUpdate);
+router.put("/update-status",verifyToken,requireTeacher,updateSubmittedAttendance);
+router.get("/advisor-students",verifyToken,requireTeacher,getAdvisorClassAttendance);
+router.get("/advisor-student-lectures",verifyToken,requireTeacher,getStudentLecturesForAdvisor);
+router.put("/advisor-mark-present",verifyToken,requireTeacher,updateLecturesByAdvisor);
 export default router;

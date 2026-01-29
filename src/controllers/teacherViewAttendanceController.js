@@ -63,7 +63,8 @@ export const getCurrentLectureForTeacher = async (req, res) => {
       JOIN classes c ON c.class_id = t.class_id
       WHERE t.teacher_id = $1
         AND t.day_of_week = $2
-        AND t.lecture_no = $3
+         AND t.lecture_no <= $3
+        AND t.lecture_no + t.duration - 1 >= $3
       LIMIT 1
       `,
       [teacherId, today, lectureNo]
@@ -236,13 +237,17 @@ export const getAttendanceSummary = async (req, res) => {
     --------------------------------------------------- */
     const attendanceAggRes = await pool.query(
       `
-      SELECT
-        student_rollno,
-        COUNT(*) AS total_lectures,
-        SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) AS present_count
-      FROM attendance
-      WHERE timetable_id = ANY($1::int[])
-      GROUP BY student_rollno
+    SELECT
+  a.student_rollno,
+  SUM(t.duration) AS total_lectures,
+  SUM(
+    CASE WHEN a.status = 'Present'
+    THEN t.duration ELSE 0 END
+  ) AS present_count
+FROM attendance a
+JOIN timetable t ON t.timetable_id = a.timetable_id
+WHERE a.timetable_id = ANY($1::int[])
+GROUP BY a.student_rollno
       `,
       [timetableIds]
     );

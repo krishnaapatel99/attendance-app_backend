@@ -41,11 +41,28 @@ export const handleLogin = async (req, res) => {
       );
     } else if (role === "teacher") {
       result = await pool.query(
-        `SELECT teacher_id AS id, name, email, password, 'teacher' AS role
-         FROM teachers
-         WHERE email = $1`,
-        [email]
-      );
+    `
+    SELECT 
+      t.teacher_id AS id,
+      t.name,
+      t.email,
+      t.password,
+      'teacher' AS role,
+
+      a.class_id AS advisor_class_id,
+      c.year AS advisor_year,
+      c.branch AS advisor_branch
+
+    FROM teachers t
+    LEFT JOIN advisors a
+      ON a.teacher_id = t.teacher_id
+    LEFT JOIN classes c
+      ON c.class_id = a.class_id
+
+    WHERE t.email = $1
+    `,
+    [email]
+  );
     } else {
       return res.status(400).json({
         success: false,
@@ -70,7 +87,19 @@ export const handleLogin = async (req, res) => {
       });
     }
 
-    
+    let advisor = null;
+
+if (user.role === "teacher") {
+  advisor = {
+    isAdvisor: !!user.advisor_class_id,
+    classId: user.advisor_class_id || null,
+    className:
+      user.advisor_year && user.advisor_branch
+        ? `${user.advisor_year} ${user.advisor_branch}`
+        : null,
+  };
+}
+
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
     const refreshHash = hashToken(refreshToken);
@@ -120,6 +149,7 @@ export const handleLogin = async (req, res) => {
         role: user.role,
         email: user.email,
         email_verified: user.email_verified,
+        advisor,
       },
     });
   } catch (error) {
@@ -253,23 +283,55 @@ export const validateUser = async (req, res) => {
       user = result.rows[0];
     } else {
       const result = await pool.query(
-        'SELECT teacher_id AS id, name, email FROM teachers WHERE teacher_id = $1',
-        [req.user.id]
-      );
+  `
+  SELECT 
+    t.teacher_id AS id,
+    t.name,
+    t.email,
+
+    a.class_id AS advisor_class_id,
+    c.year AS advisor_year,
+    c.branch AS advisor_branch
+
+  FROM teachers t
+  LEFT JOIN advisors a
+    ON a.teacher_id = t.teacher_id
+  LEFT JOIN classes c
+    ON c.class_id = a.class_id
+
+  WHERE t.teacher_id = $1
+  `,
+  [req.user.id]
+);
       user = result.rows[0];
     }
 
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
+let advisor = null;
+
+if (req.user.role === "teacher") {
+  advisor = {
+    isAdvisor: !!user.advisor_class_id,
+    classId: user.advisor_class_id || null,
+    className:
+      user.advisor_year && user.advisor_branch
+        ? `${user.advisor_year} ${user.advisor_branch}`
+        : null,
+  };
+}
 
     res.json({ 
-      success: true,
-      user: {
-        ...user,
-        role: req.user.role
-      }
-    });
+  success: true,
+  user: {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: req.user.role,
+    advisor, 
+  }
+});
   } catch (error) {
     console.error("Validation error:", error);
     res.status(500).json({ success: false, message: "Internal server error" });

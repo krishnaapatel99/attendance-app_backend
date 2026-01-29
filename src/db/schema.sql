@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS teachers (
 CREATE TABLE IF NOT EXISTS classes (
   class_id SERIAL PRIMARY KEY,
   year VARCHAR(20) NOT NULL,      -- SE, TE, BE
-  branch VARCHAR(50) NOT NULL     -- Comps-A, IT-B
+  branch VARCHAR(50) NOT NULL     -- Comps-A
 );
 CREATE TABLE IF NOT EXISTS students (
   student_rollno VARCHAR(20) PRIMARY KEY,
@@ -71,6 +71,16 @@ CREATE TABLE IF NOT EXISTS attendance (
   )
 );
 
+CREATE TABLE IF NOT EXISTS password_otps (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(20) NOT NULL,
+  role VARCHAR(10) NOT NULL CHECK (role IN ('student', 'teacher')),
+  otp VARCHAR(255) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
 CREATE TABLE email_otps (
   id SERIAL PRIMARY KEY,
   email VARCHAR(255) NOT NULL,
@@ -79,10 +89,24 @@ CREATE TABLE email_otps (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   attempts INT DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS advisors (
+  advisor_id SERIAL PRIMARY KEY,
+  teacher_id VARCHAR(20) NOT NULL
+    REFERENCES teachers(teacher_id)
+    ON DELETE CASCADE,
+  class_id INT NOT NULL
+    REFERENCES classes(class_id)
+    ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 ALTER TABLE email_otps
 ADD COLUMN resend_count INT DEFAULT 0;
 ALTER TABLE email_otps
 ADD COLUMN student_rollno VARCHAR(20) REFERENCES students(student_rollno)
+ALTER TABLE timetable
+ADD COLUMN duration INT NOT NULL DEFAULT 1;
 
 
 ALTER TABLE students
@@ -93,6 +117,9 @@ ALTER TABLE teachers
 ADD COLUMN refresh_token_hash TEXT,
 ADD COLUMN refresh_token_expires TIMESTAMP;
 
+ALTER TABLE timetable
+ADD CONSTRAINT uniq_teacher_day_slot
+UNIQUE (teacher_id, day_of_week, lecture_no);
 
 -- Fast calendar + summary + student view
 CREATE INDEX IF NOT EXISTS idx_attendance_student_timetable_date
@@ -133,3 +160,21 @@ ON batches (class_id);
 -- Fast batch → student resolution
 CREATE INDEX IF NOT EXISTS idx_student_batches_batch
 ON student_batches (batch_id, student_rollno);
+
+-- critical join accelerator
+CREATE INDEX IF NOT EXISTS idx_attendance_timetable
+ON attendance (timetable_id);
+
+-- critical student analytics index
+CREATE INDEX IF NOT EXISTS idx_attendance_student_submitted
+ON attendance (student_rollno, submitted, timetable_id);
+
+-- optional but good
+CREATE INDEX IF NOT EXISTS idx_timetable_analytics
+ON timetable (subject_id, lecture_type, class_id, batch_id, timetable_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_advisor_class
+ON advisors (class_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_advisor_teacher_class
+ON advisors (teacher_id, class_id);
