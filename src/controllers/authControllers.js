@@ -279,7 +279,7 @@ export const validateUser = async (req, res) => {
     let user;
     if (req.user.role === 'student') {
       const result = await pool.query(
-        'SELECT student_rollno AS id, name, email FROM students WHERE student_rollno = $1',
+        'SELECT student_rollno AS id, name, email,email_verified FROM students WHERE student_rollno = $1',
         [req.user.id]
       );
       user = result.rows[0];
