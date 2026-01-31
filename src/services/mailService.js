@@ -26,7 +26,7 @@ export const sendOtpEmail = async ({ to, otp, purpose }) => {
 
   await apiInstance.sendTransacEmail({
     sender: {
-      email: process.env.MAIL_FROM || "no-reply@upasthit.com",
+      email: process.env.MAIL_FROM || "upasthitinfo@gmail.com",
       name: "Upasthit",
     },
     to: [{ email: to }],
@@ -37,7 +37,7 @@ export const sendOtpEmail = async ({ to, otp, purpose }) => {
 export const sendGeneralEmail = async ({ to, subject, html }) => {
   await apiInstance.sendTransacEmail({
     sender: {
-      email: process.env.MAIL_FROM || "no-reply@upasthit.com",
+      email: process.env.MAIL_FROM || "upasthitinfo@gmail.com",
       name: "Upasthit",
     },
     to: Array.isArray(to)
