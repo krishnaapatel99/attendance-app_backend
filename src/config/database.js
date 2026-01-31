@@ -1,14 +1,12 @@
 import pkg from 'pg';
-const { Pool } = pkg;
-import dotenv from 'dotenv';
-dotenv.config();
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,  // needed for Neon or other cloud DBs
-  },
-});
-
-export default pool;
-// src/controllers/authControllers.js
+ const { Pool } = pkg;
+  import dotenv from 'dotenv';
+   dotenv.config(); 
+   const pool = new Pool
+   ({
+    connectionString: process.env.DATABASE_URL, 
+    ssl: { 
+      rejectUnauthorized: false, // needed for Neon or other cloud DBs 
+    } 
+  }); 
+  export default pool;

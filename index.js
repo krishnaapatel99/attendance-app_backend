@@ -22,7 +22,7 @@ app.use(cookieParser());
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
-  "https://attendance-app1-three.vercel.app",
+  "https://attendance-app-mu-swart.vercel.app",
 ];
 
 app.use(cors({

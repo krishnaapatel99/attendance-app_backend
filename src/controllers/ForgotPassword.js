@@ -5,8 +5,7 @@ import {generateOtp} from "../utils/generateOtp.js";
 
 export const sendForgotPasswordOtp = async (req, res) => {
   const { role, identifier } = req.body;
-  // role: "student" | "teacher"
-  // identifier: rollNumber (student) OR email (teacher)
+ 
 
   if (!role || !identifier) {
     return res.status(400).json({
