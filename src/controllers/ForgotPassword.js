@@ -1,6 +1,6 @@
 import pool from "../config/database.js";
 import bcrypt from "bcrypt";
-import { transporter } from "../config/mail.js";
+import { sendOtpEmail } from "../services/mailService.js";
 import {generateOtp} from "../utils/generateOtp.js";
 
 export const sendForgotPasswordOtp = async (req, res) => {
@@ -84,21 +84,19 @@ export const sendForgotPasswordOtp = async (req, res) => {
     });
 
     // 5️⃣ Send OTP email
-    transporter.sendMail({
-  from: `"Upasthit" <${process.env.MAIL_USER}>`,
-  to: email,
-  subject: "Password Reset OTP",
-  html: `
-    <div style="font-family: Arial, sans-serif">
-      <h2>Password Reset</h2>
-      <p>Your OTP is:</p>
-      <h1 style="letter-spacing: 3px">${otp}</h1>
-      <p>This OTP will expire in 5 minutes.</p>
-    </div>
-  `,
-})
-.then(() => console.log("Forgot password OTP sent"))
-.catch(err => console.error("Forgot OTP mail error:", err));
+setImmediate(async () => {
+  try {
+    await sendOtpEmail({
+      to: email,
+      otp,
+      purpose: "FORGOT_PASSWORD",
+    });
+    console.log("Forgot password OTP sent");
+  } catch (err) {
+    console.error("Forgot OTP mail error:", err);
+  }
+});
+
 
    
   } catch (error) {
@@ -215,7 +213,7 @@ export const resendForgotPasswordOtp = async (req, res) => {
   if (!role || !identifier) {
     return res.status(400).json({
       success: false,
-      message: "Role and identifier are required"
+      message: "Role and identifier are required",
     });
   }
 
@@ -231,12 +229,13 @@ export const resendForgotPasswordOtp = async (req, res) => {
       );
 
       if (student.rows.length === 0 || !student.rows[0].email) {
-        return res.status(404).json({ message: "Student not found or email missing" });
+        return res
+          .status(404)
+          .json({ message: "Student not found or email missing" });
       }
 
       userId = student.rows[0].student_rollno;
       email = student.rows[0].email;
-
     } else if (role === "teacher") {
       const teacher = await pool.query(
         `SELECT teacher_id, email FROM teachers WHERE email = $1`,
@@ -249,7 +248,6 @@ export const resendForgotPasswordOtp = async (req, res) => {
 
       userId = teacher.rows[0].teacher_id;
       email = teacher.rows[0].email;
-
     } else {
       return res.status(400).json({ message: "Invalid role" });
     }
@@ -273,32 +271,32 @@ export const resendForgotPasswordOtp = async (req, res) => {
       `,
       [userId, role, hashedOtp, expiresAt]
     );
-res.json({
+
+    // ✅ Respond immediately
+    res.json({
       success: true,
-      message: "OTP resent successfully"
+      message: "OTP resent successfully",
     });
-    // 5️⃣ Send mail
-   transporter.sendMail({
-  from: process.env.MAIL_USER,
-  to: email,
-  subject: "Password Reset OTP",
-  html: `
-    <div>
-      <h2>Password Reset</h2>
-      <h1>${otp}</h1>
-      <p>OTP valid for 5 minutes.</p>
-    </div>
-  `,
-})
-.catch(err => console.error("Resend forgot OTP error:", err));
 
-    
+    // 5️⃣ Send OTP email (background)
+    setImmediate(async () => {
+      try {
+        await sendOtpEmail({
+          to: email,
+          otp,
+          purpose: "FORGOT_PASSWORD",
+        });
 
+        console.log("Resent forgot password OTP sent");
+      } catch (err) {
+        console.error("Resend forgot OTP mail error:", err);
+      }
+    });
   } catch (error) {
     console.error("RESEND OTP ERROR >>>", error);
     res.status(500).json({
       success: false,
-      message: "Failed to resend OTP"
+      message: "Failed to resend OTP",
     });
   }
 };

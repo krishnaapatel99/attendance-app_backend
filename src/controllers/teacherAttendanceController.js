@@ -50,6 +50,7 @@ export const getTeacherDashboard = async (req, res) => {
 // Get students list for attendance marking with current timetable context
 export const getStudentsForAttendance = async (req, res) => {
   try {
+    const teacherId = req.user.id;
     const { timetable_id } = req.query;
 
     // Get timetable context
@@ -58,8 +59,9 @@ export const getStudentsForAttendance = async (req, res) => {
       SELECT lecture_type, class_id, batch_id
       FROM timetable
       WHERE timetable_id = $1
+      AND teacher_id = $2
       `,
-      [timetable_id]
+      [timetable_id, teacherId]
     );
 
     if (!tt.rows.length) {
@@ -111,6 +113,7 @@ export const getStudentsForAttendance = async (req, res) => {
 // Get attendance data for a specific date and class
 export const getAttendanceData = async (req, res) => {
   try {
+    const teacherId = req.user.id;
     const { timetable_id, attendance_date } = req.query;
 
     // get lecture context
@@ -119,8 +122,9 @@ export const getAttendanceData = async (req, res) => {
       SELECT lecture_type, class_id, batch_id
       FROM timetable
       WHERE timetable_id = $1
+      AND teacher_id = $2
       `,
-      [timetable_id]
+      [timetable_id, teacherId]
     );
 
     if (!tt.rows.length) {

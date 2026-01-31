@@ -205,7 +205,7 @@ export const updateLecturesByAdvisor = async (req, res) => {
         message: "You are not an advisor",
       });
     }
-
+    const classId = advisorRes.rows[0].class_id;
     const attendanceIds = updates.map(u => u.attendance_id);
 
     /* 2️⃣ Fetch current state */
@@ -218,11 +218,13 @@ export const updateLecturesByAdvisor = async (req, res) => {
         t.lecture_no,
         sub.subject_name
       FROM attendance a
-      JOIN timetable t ON t.timetable_id = a.timetable_id
-      JOIN subjects sub ON sub.subject_id = t.subject_id
-      WHERE a.attendance_id = ANY($1::int[])
+JOIN timetable t ON t.timetable_id = a.timetable_id
+JOIN subjects sub ON sub.subject_id = t.subject_id
+JOIN students s ON s.student_rollno = a.student_rollno
+WHERE a.attendance_id = ANY($1::int[])
+  AND s.class_id = $2
       `,
-      [attendanceIds]
+      [attendanceIds, classId]
     );
 
     const results = [];

@@ -1,6 +1,6 @@
 import pool from "../config/database.js";
 import { generateOtp } from "../utils/generateOtp.js";
-import { transporter } from "../config/mail.js";
+import { sendOtpEmail } from "../services/mailService.js";
 
 const OTP_EXPIRY_MIN = 5;
 const MAX_OTP_ATTEMPTS = 5;
@@ -8,58 +8,70 @@ const MAX_RESENDS = 3;
 const RESEND_COOLDOWN_SEC = 60;
 
 export const sendOtp = async (req, res) => {
- try {
-   const studentId = req.user.id; // from JWT middleware
-  
-  const { email } = req.body;
-const emailExists = await pool.query(
-  `SELECT 1 
-   FROM students 
-   WHERE email = $1 AND student_rollno != $2`,
-  [email, studentId]
-);
+  try {
+    const studentId = req.user.id; // from JWT middleware
+    const { email } = req.body;
 
-if (emailExists.rows.length > 0) {
-  return res.status(409).json({
-    success: false,
-    message: "This email is already associated with another account",
-  });
-}
-  // Attach email to existing user (unverified)
-  await pool.query(
-    `UPDATE students
-     SET email = $1, email_verified = false
-     WHERE student_rollno = $2`,
-    [email, studentId]
-  );
+    // 🔍 Check email uniqueness
+    const emailExists = await pool.query(
+      `SELECT 1 
+       FROM students 
+       WHERE email = $1 AND student_rollno != $2`,
+      [email, studentId]
+    );
 
-  // Remove old OTPs for this user
-  await pool.query(
-    "DELETE FROM email_otps WHERE student_rollno = $1",
-    [studentId]
-  );
+    if (emailExists.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "This email is already associated with another account",
+      });
+    }
 
-  const otp = generateOtp();
-  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MIN * 60 * 1000);
+    // 📌 Attach email to student (unverified)
+    await pool.query(
+      `UPDATE students
+       SET email = $1, email_verified = false
+       WHERE student_rollno = $2`,
+      [email, studentId]
+    );
 
-  await pool.query(
-    `INSERT INTO email_otps (student_rollno, email, otp, expires_at)
-     VALUES ($1, $2, $3, $4)`,
-    [studentId, email, otp, expiresAt]
-  );
- res.json({ message: "OTP sent" ,
-    success: true,
-  });
-  transporter.sendMail({
-  from: `"Upasthit" <${process.env.MAIL_USER}>`,
-  to: email,
-  subject: "Your OTP",
-  html: `<h2>Your OTP is ${otp}</h2>`,
-})
-.catch(err => console.error("Email OTP error:", err));
+    // 🧹 Remove old OTPs
+    await pool.query(
+      "DELETE FROM email_otps WHERE student_rollno = $1",
+      [studentId]
+    );
 
- 
- } catch (err) {
+    // 🔐 Generate OTP
+    const otp = generateOtp();
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MIN * 60 * 1000);
+
+    await pool.query(
+      `INSERT INTO email_otps (student_rollno, email, otp, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [studentId, email, otp, expiresAt]
+    );
+
+    // ✅ Respond immediately
+    res.json({
+      success: true,
+      message: "OTP sent",
+    });
+
+    // ✉️ Send OTP email in background
+    setImmediate(async () => {
+      try {
+        await sendOtpEmail({
+          to: email,
+          otp,
+          purpose: "EMAIL_VERIFICATION",
+        });
+
+        console.log("Email verification OTP sent");
+      } catch (err) {
+        console.error("Email OTP error:", err);
+      }
+    });
+  } catch (err) {
     console.error("🔥 SEND OTP ERROR:", err);
     return res.status(500).json({
       success: false,
@@ -67,6 +79,7 @@ if (emailExists.rows.length > 0) {
     });
   }
 };
+
 
 
 
@@ -136,57 +149,73 @@ export const verifyOtp = async (req, res) => {
 export const resendOtp = async (req, res) => {
   const studentId = req.user.id;
 
-  const otpResult = await pool.query(
-    "SELECT * FROM email_otps WHERE student_rollno = $1",
-    [studentId]
-  );
+  try {
+    const otpResult = await pool.query(
+      "SELECT * FROM email_otps WHERE student_rollno = $1",
+      [studentId]
+    );
 
-  if (otpResult.rows.length === 0) {
-    return res.status(400).json({ message: "OTP not found" });
-  }
+    if (otpResult.rows.length === 0) {
+      return res.status(400).json({ message: "OTP not found" });
+    }
 
-  const otpData = otpResult.rows[0];
+    const otpData = otpResult.rows[0];
 
-  if (otpData.resend_count >= MAX_RESENDS) {
-    await pool.query("DELETE FROM email_otps WHERE student_rollno = $1", [studentId]);
-    return res.status(429).json({
-      message: "Resend limit exceeded. Request new OTP."
+    if (otpData.resend_count >= MAX_RESENDS) {
+      await pool.query(
+        "DELETE FROM email_otps WHERE student_rollno = $1",
+        [studentId]
+      );
+      return res.status(429).json({
+        message: "Resend limit exceeded. Request new OTP.",
+      });
+    }
+
+    const diff =
+      (Date.now() - new Date(otpData.created_at)) / 1000;
+
+    if (diff < RESEND_COOLDOWN_SEC) {
+      return res.status(429).json({
+        message: "Please wait before resending OTP",
+      });
+    }
+
+    const newOtp = generateOtp();
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MIN * 60 * 1000);
+
+    await pool.query(
+      `UPDATE email_otps
+       SET otp = $1,
+           expires_at = $2,
+           resend_count = resend_count + 1,
+           attempts = 0,
+           created_at = NOW()
+       WHERE student_rollno = $3`,
+      [newOtp, expiresAt, studentId]
+    );
+
+    // ✅ Respond immediately
+    res.json({ message: "OTP resent successfully" });
+
+    // ✉️ Send email in background
+    setImmediate(async () => {
+      try {
+        await sendOtpEmail({
+          to: otpData.email,
+          otp: newOtp,
+          purpose: "EMAIL_VERIFICATION",
+        });
+
+        console.log("Resent email verification OTP sent");
+      } catch (err) {
+        console.error("Resend OTP email error:", err);
+      }
+    });
+  } catch (err) {
+    console.error("RESEND OTP ERROR:", err);
+    res.status(500).json({
+      message: "Failed to resend OTP",
     });
   }
-
-  const diff =
-    (Date.now() - new Date(otpData.created_at)) / 1000;
-
-  if (diff < RESEND_COOLDOWN_SEC) {
-    return res.status(429).json({
-      message: "Please wait before resending OTP"
-    });
-  }
-
-  const newOtp = generateOtp();
-  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MIN * 60 * 1000);
-
-  await pool.query(
-    `UPDATE email_otps
-     SET otp = $1,
-         expires_at = $2,
-         resend_count = resend_count + 1,
-         attempts = 0,
-         created_at = NOW()
-     WHERE student_rollno = $3`,
-    [newOtp, expiresAt, studentId]
-  );
-
-  res.json({ message: "OTP resent successfully" });
-
-transporter.sendMail({
-  to: otpData.email,
-  subject: "Your New OTP",
-  html: `<h2>Your new OTP is ${newOtp}</h2>`,
-})
-.catch(err => console.error("Resend OTP error:", err));
-
-
-  
 };
 
