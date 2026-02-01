@@ -1,5 +1,6 @@
 import pool from "../config/database.js";
-import redisClient from "../config/redis.js";
+import { redisGetSafe, redisSetSafe, redisDelSafe  } from "../utils/redisSafe.js";
+
 //Show data and rows of students 
 
 export const getTeacherDashboard = async (req, res) => {
@@ -52,10 +53,9 @@ export const getStudentsForAttendance = async (req, res) => {
 
     const redisKey = `lecture:students:${timetable_id}`;
 
-    // 1️⃣ CHECK REDIS FIRST
-    const cached = await redisClient.get(redisKey);
+    // 1️⃣ Redis (SAFE)
+    const cached = await redisGetSafe(redisKey);
     if (cached) {
-      console.log("⚡ Students list from Redis");
       return res.json({
         success: true,
         data: JSON.parse(cached),
@@ -63,7 +63,7 @@ export const getStudentsForAttendance = async (req, res) => {
       });
     }
 
-    // 2️⃣ GET LECTURE CONTEXT
+    // 2️⃣ Lecture context
     const tt = await pool.query(
       `
       SELECT lecture_type, class_id, batch_id
@@ -75,10 +75,7 @@ export const getStudentsForAttendance = async (req, res) => {
     );
 
     if (!tt.rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: "Lecture not found"
-      });
+      return res.status(404).json({ success: false });
     }
 
     const { lecture_type, class_id, batch_id } = tt.rows[0];
@@ -86,7 +83,7 @@ export const getStudentsForAttendance = async (req, res) => {
     let studentsQuery;
     let params;
 
-    // 3️⃣ BUILD QUERY
+    // 3️⃣ Build query
     if (lecture_type === "LECTURE") {
       studentsQuery = `
         SELECT student_rollno, name
@@ -108,11 +105,11 @@ export const getStudentsForAttendance = async (req, res) => {
 
     const students = await pool.query(studentsQuery, params);
 
-    // 4️⃣ SAVE TO REDIS (SHORT TTL)
-    await redisClient.set(
+    // 4️⃣ Cache (SAFE – 6 hours)
+    await redisSetSafe(
       redisKey,
       JSON.stringify(students.rows),
-      { EX: 60 * 60 * 6 } // 6 hours
+      { EX: 60 * 60 * 6 }
     );
 
     res.json({
@@ -123,12 +120,10 @@ export const getStudentsForAttendance = async (req, res) => {
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({
-      success: false,
-      message: "Server error"
-    });
+    res.status(500).json({ success: false });
   }
 };
+
 
 
 
@@ -327,10 +322,17 @@ export const submitAttendance = async (req, res) => {
       [timetable_id, attendance_date]
     );
 
-    res.json({ success: true, message: "Attendance locked" });
+    // 🔴 IMPORTANT: CLEAR REDIS CACHE FOR THIS LECTURE
+    await redisDelSafe(`lecture:students:${timetable_id}`);
+
+    res.json({
+      success: true,
+      message: "Attendance locked"
+    });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false });
   }
 };
+

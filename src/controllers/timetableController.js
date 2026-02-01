@@ -1,5 +1,5 @@
 import pool from "../config/database.js";
-import redisClient from "../config/redis.js";
+import { redisGetSafe, redisSetSafe } from "../utils/redisSafe.js";
 
 const TIME_SLOTS = {
   1: "9:30-10:30",
@@ -11,25 +11,21 @@ const TIME_SLOTS = {
   7: "4:00-4:30"
 };
 
-/* =====================================================
-   STUDENT WEEKLY TIMETABLE (WITH REDIS)
-===================================================== */
 export const getStudentWeeklyTimetable = async (req, res) => {
   try {
     const studentId = req.user.id;
     const redisKey = `student:timetable:${studentId}`;
 
-    // 1️⃣ CHECK REDIS FIRST
-    const cachedData = await redisClient.get(redisKey);
+    // 1️⃣ Redis (safe)
+    const cachedData = await redisGetSafe(redisKey);
     if (cachedData) {
-      console.log("⚡ Student timetable from Redis");
       return res.json({
         ...JSON.parse(cachedData),
-        source: "redis"
+        source: "redis",
       });
     }
 
-    // 2️⃣ FETCH STUDENT CLASS
+    // 2️⃣ Fetch student class
     const studentRes = await pool.query(
       `SELECT class_id FROM students WHERE student_rollno = $1`,
       [studentId]
@@ -38,20 +34,20 @@ export const getStudentWeeklyTimetable = async (req, res) => {
     if (!studentRes.rowCount) {
       return res.status(404).json({
         success: false,
-        message: "Student not found"
+        message: "Student not found",
       });
     }
 
     const classId = studentRes.rows[0].class_id;
 
-    // 3️⃣ FETCH STUDENT BATCHES
+    // 3️⃣ Fetch student batches
     const batchRes = await pool.query(
       `SELECT batch_id FROM student_batches WHERE student_rollno = $1`,
       [studentId]
     );
     const batchIds = batchRes.rows.map(b => b.batch_id);
 
-    // 4️⃣ FETCH TIMETABLE FROM DB
+    // 4️⃣ Fetch timetable
     const result = await pool.query(
       `SELECT
         t.day_of_week,
@@ -87,7 +83,7 @@ export const getStudentWeeklyTimetable = async (req, res) => {
       [classId, batchIds]
     );
 
-    // 5️⃣ BUILD FINAL TIMETABLE
+    // 5️⃣ Build timetable
     const timetable = {};
 
     result.rows.forEach(row => {
@@ -106,7 +102,7 @@ export const getStudentWeeklyTimetable = async (req, res) => {
           batch: row.lecture_type === "PRACTICAL" ? row.batch_name : null,
           time: TIME_SLOTS[slotNo],
           isContinuation: i > 0,
-          parentLecture: row.lecture_no
+          parentLecture: row.lecture_no,
         };
       }
     });
@@ -116,11 +112,11 @@ export const getStudentWeeklyTimetable = async (req, res) => {
       role: "student",
       timetable,
       timeSlots: TIME_SLOTS,
-      source: "database"
+      source: "database",
     };
 
-    // 6️⃣ SAVE TO REDIS (90 DAYS)
-    await redisClient.set(
+    // 6️⃣ Cache (safe, 120 days)
+    await redisSetSafe(
       redisKey,
       JSON.stringify(responseData),
       { EX: 60 * 60 * 24 * 120 }
@@ -132,30 +128,26 @@ export const getStudentWeeklyTimetable = async (req, res) => {
     console.error("Student timetable error:", error);
     res.status(500).json({
       success: false,
-      message: "Internal server error"
+      message: "Internal server error",
     });
   }
 };
 
-/* =====================================================
-   TEACHER WEEKLY TIMETABLE (WITH REDIS)
-===================================================== */
 export const getTeacherWeeklyTimetable = async (req, res) => {
   try {
     const teacherId = req.user.id;
     const redisKey = `teacher:timetable:${teacherId}`;
 
-    // 1️⃣ CHECK REDIS FIRST
-    const cachedData = await redisClient.get(redisKey);
+    // 1️⃣ Redis (safe)
+    const cachedData = await redisGetSafe(redisKey);
     if (cachedData) {
-      console.log("⚡ Teacher timetable from Redis");
       return res.json({
         ...JSON.parse(cachedData),
-        source: "redis"
+        source: "redis",
       });
     }
 
-    // 2️⃣ FETCH TIMETABLE FROM DB
+    // 2️⃣ Fetch timetable
     const result = await pool.query(
       `SELECT
         t.day_of_week,
@@ -202,7 +194,7 @@ export const getTeacherWeeklyTimetable = async (req, res) => {
           batch: row.lecture_type === "PRACTICAL" ? row.batch_name : null,
           time: TIME_SLOTS[slotNo],
           isContinuation: i > 0,
-          parentLecture: row.lecture_no
+          parentLecture: row.lecture_no,
         };
       }
     });
@@ -212,11 +204,11 @@ export const getTeacherWeeklyTimetable = async (req, res) => {
       role: "teacher",
       timetable,
       timeSlots: TIME_SLOTS,
-      source: "database"
+      source: "database",
     };
 
-    // 3️⃣ SAVE TO REDIS (90 DAYS)
-    await redisClient.set(
+    // 3️⃣ Cache (safe, 120 days)
+    await redisSetSafe(
       redisKey,
       JSON.stringify(responseData),
       { EX: 60 * 60 * 24 * 120 }
@@ -228,7 +220,7 @@ export const getTeacherWeeklyTimetable = async (req, res) => {
     console.error("Teacher timetable error:", error);
     res.status(500).json({
       success: false,
-      message: "Internal server error"
+      message: "Internal server error",
     });
   }
 };

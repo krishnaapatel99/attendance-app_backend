@@ -1,5 +1,6 @@
 import pool from "../config/database.js";
-import redisClient from "../config/redis.js";
+
+import { redisGetSafe, redisSetSafe } from "../utils/redisSafe.js";
 
 const TIME_SLOTS = {
   1: { start: "09:30", end: "10:30" },
@@ -102,6 +103,8 @@ export const getCurrentLectureForTeacher = async (req, res) => {
 };
 
 
+
+
 export const getTeacherLectureTypeSubjects = async (req, res) => {
   try {
     const teacherId = req.user.id;
@@ -109,17 +112,17 @@ export const getTeacherLectureTypeSubjects = async (req, res) => {
 
     const redisKey = `teacher:subjects:${teacherId}:${lecture_type || "all"}`;
 
-    // 1️⃣ Redis check
-    const cached = await redisClient.get(redisKey);
+    // 1️⃣ Redis (safe)
+    const cached = await redisGetSafe(redisKey);
     if (cached) {
       return res.json({
         success: true,
         data: JSON.parse(cached),
-        source: "redis"
+        source: "redis",
       });
     }
 
-    // 2️⃣ DB query
+    // 2️⃣ DB
     const result = await pool.query(
       `
       SELECT DISTINCT
@@ -134,17 +137,17 @@ export const getTeacherLectureTypeSubjects = async (req, res) => {
       [teacherId, lecture_type || null]
     );
 
-    // 3️⃣ Cache
-    await redisClient.set(
+    // 3️⃣ Cache (safe)
+    await redisSetSafe(
       redisKey,
       JSON.stringify(result.rows),
-      { EX: 60 * 60 * 24 } // 24 hours
+      { EX: 60 * 60 * 24 }
     );
 
     res.json({
       success: true,
       data: result.rows,
-      source: "database"
+      source: "database",
     });
 
   } catch (err) {
@@ -155,62 +158,68 @@ export const getTeacherLectureTypeSubjects = async (req, res) => {
 
 
 
-export const getTeacherClassesForSubjectType = async (req, res) => {
-  try {
-    const teacherId = req.user.id;
-    const { subject_id, lecture_type } = req.query;
 
-    if (!subject_id || !lecture_type) {
-      return res.status(400).json({ success: false });
-    }
+  
 
-    const redisKey = `teacher:classes:${teacherId}:${subject_id}:${lecture_type}`;
+  export const getTeacherClassesForSubjectType = async (req, res) => {
+    try {
+      const teacherId = req.user.id;
+      const { subject_id, lecture_type } = req.query;
 
-    // 1️⃣ Redis check
-    const cached = await redisClient.get(redisKey);
-    if (cached) {
-      return res.json({
+      if (!subject_id || !lecture_type) {
+        return res.status(400).json({ success: false });
+      }
+
+      const redisKey = `teacher:classes:${teacherId}:${subject_id}:${lecture_type}`;
+
+      // 1️⃣ Redis (safe)
+      const cached = await redisGetSafe(redisKey);
+      if (cached) {
+        return res.json({
+          success: true,
+          data: JSON.parse(cached),
+          source: "redis",
+        });
+      }
+
+      // 2️⃣ DB
+      const result = await pool.query(
+        `
+        SELECT DISTINCT
+          c.class_id,
+          c.year,
+          c.branch
+        FROM timetable t
+        JOIN classes c ON c.class_id = t.class_id
+        WHERE t.teacher_id = $1
+          AND t.subject_id = $2
+          AND t.lecture_type = $3
+        ORDER BY c.year, c.branch
+        `,
+        [teacherId, subject_id, lecture_type]
+      );
+
+      // 3️⃣ Cache (safe)
+      await redisSetSafe(
+        redisKey,
+        JSON.stringify(result.rows),
+        { EX: 60 * 60 * 24 }
+      );
+
+      res.json({
         success: true,
-        data: JSON.parse(cached),
-        source: "redis"
+        data: result.rows,
+        source: "database",
       });
-    }
 
-    // 2️⃣ DB query
-    const result = await pool.query(
-      `
-      SELECT DISTINCT
-        c.class_id,
-        c.year,
-        c.branch
-      FROM timetable t
-      JOIN classes c ON c.class_id = t.class_id
-      WHERE t.teacher_id = $1
-        AND t.subject_id = $2
-        AND t.lecture_type = $3
-      ORDER BY c.year, c.branch
-      `,
-      [teacherId, subject_id, lecture_type]
-    );
-
-    // 3️⃣ Cache
-    await redisClient.set(
-      redisKey,
-      JSON.stringify(result.rows),
-      { EX: 60 * 60 * 24 }
-    );
-
-    res.json({
-      success: true,
-      data: result.rows,
-      source: "database"
-    });
-
-  } catch (err) {
-    console.error("Teacher classes error:", err);
+    } catch (err) {
+      console.error("Teacher classes error:", err);
     res.status(500).json({ success: false });
   }
 };
+
+
+
 
 export const getTeacherBatchesForSubjectClass = async (req, res) => {
   try {
@@ -220,23 +229,23 @@ export const getTeacherBatchesForSubjectClass = async (req, res) => {
     if (!subject_id || !class_id) {
       return res.json({
         success: true,
-        data: []
+        data: [],
       });
     }
 
     const redisKey = `teacher:batches:${teacherId}:${subject_id}:${class_id}`;
 
-    // 1️⃣ Redis check
-    const cached = await redisClient.get(redisKey);
+    // 1️⃣ Redis (safe)
+    const cached = await redisGetSafe(redisKey);
     if (cached) {
       return res.json({
         success: true,
         data: JSON.parse(cached),
-        source: "redis"
+        source: "redis",
       });
     }
 
-    // 2️⃣ DB query
+    // 2️⃣ DB
     const result = await pool.query(
       `
       SELECT DISTINCT
@@ -252,8 +261,8 @@ export const getTeacherBatchesForSubjectClass = async (req, res) => {
       [teacherId, subject_id, class_id]
     );
 
-    // 3️⃣ Cache
-    await redisClient.set(
+    // 3️⃣ Cache (safe)
+    await redisSetSafe(
       redisKey,
       JSON.stringify(result.rows),
       { EX: 60 * 60 * 24 }
@@ -262,7 +271,7 @@ export const getTeacherBatchesForSubjectClass = async (req, res) => {
     res.json({
       success: true,
       data: result.rows,
-      source: "database"
+      source: "database",
     });
 
   } catch (err) {
@@ -270,6 +279,7 @@ export const getTeacherBatchesForSubjectClass = async (req, res) => {
     res.status(500).json({ success: false });
   }
 };
+
 
 
 export const getAttendanceSummary = async (req, res) => {

@@ -12,6 +12,7 @@ import insertDataRoutes from "./src/routes/insertDataRoutes.js";
 import otpRoutes from "./src/routes/otpRoutes.js";
 import initDB from "./src/db/init.js";
 import emailRoutes from "./src/routes/emailRoute.js";
+import { checkRedisHealth } from "./src/utils/redisSafe.js";
 
 dotenv.config();
 
@@ -37,7 +38,21 @@ app.use(cors({
   credentials: true,
 }));
 
+app.get("/ready", async (req, res) => {
+  const redisOk = await checkRedisHealth();
 
+  if (!redisOk) {
+    return res.status(503).json({
+      status: "not-ready",
+      redis: "down",
+    });
+  }
+
+  res.status(200).json({
+    status: "ready",
+    redis: "up",
+  });
+});
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
