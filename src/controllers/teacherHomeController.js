@@ -1,4 +1,5 @@
 import pool from "../config/database.js";
+import redisClient from "../config/redis.js";
 
 export const getTeacherProfile = async (req, res) => {
   try {
@@ -9,18 +10,52 @@ export const getTeacherProfile = async (req, res) => {
       });
     }
 
-    const result = await pool.query(
-      "SELECT name FROM teachers WHERE teacher_id = $1",
-      [req.user.id]
-    );
+    const teacherId = req.user.id;
+    const redisKey = `teacher:profile:${teacherId}`;
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: "Teacher not found" });
+    // 1️⃣ Check Redis
+    const cached = await redisClient.get(redisKey);
+    if (cached) {
+      return res.json({
+        success: true,
+        name: JSON.parse(cached).name,
+        source: "redis"
+      });
     }
 
-    res.json({ success: true, data: result.rows[0], name: result.rows[0].name });
+    // 2️⃣ DB query
+    const result = await pool.query(
+      "SELECT name FROM teachers WHERE teacher_id = $1",
+      [teacherId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Teacher not found"
+      });
+    }
+
+    const responseData = {
+      success: true,
+      name: result.rows[0].name,
+      source: "database"
+    };
+
+    // 3️⃣ Cache for 7 days
+    await redisClient.set(
+      redisKey,
+      JSON.stringify(responseData),
+      { EX: 60 * 60 * 24 * 7 }
+    );
+
+    res.json(responseData);
+
   } catch (error) {
-    console.error("Error fetching teacher name:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
+    console.error("Error fetching teacher profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
   }
 };

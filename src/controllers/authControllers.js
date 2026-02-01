@@ -125,16 +125,16 @@ if (user.role === "teacher") {
     
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: true,
+      sameSite: "none",
       path: "/",
       maxAge: 15 * 60 * 1000, // 15 min
     });
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: true,
+      sameSite: "none",
       path: "/",
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
@@ -211,8 +211,8 @@ export const refreshAccessToken = async (req, res) => {
 
     res.cookie("accessToken", newAccessToken, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: true,
+      sameSite: "none",
       path: "/",
       maxAge: 15 * 60 * 1000,
     });
@@ -253,14 +253,14 @@ export const logout = async (req, res) => {
 
   res.clearCookie("accessToken", {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
+    secure: true,
+    sameSite: "none",
     path: "/",
   });
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
+    secure: true,
+    sameSite: "none",
     path: "/",
   });
 

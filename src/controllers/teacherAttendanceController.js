@@ -1,5 +1,5 @@
 import pool from "../config/database.js";
-
+import redisClient from "../config/redis.js";
 //Show data and rows of students 
 
 export const getTeacherDashboard = async (req, res) => {
@@ -45,27 +45,40 @@ export const getTeacherDashboard = async (req, res) => {
   }
 };
 
-
-
-// Get students list for attendance marking with current timetable context
 export const getStudentsForAttendance = async (req, res) => {
   try {
     const teacherId = req.user.id;
     const { timetable_id } = req.query;
 
-    // Get timetable context
+    const redisKey = `lecture:students:${timetable_id}`;
+
+    // 1️⃣ CHECK REDIS FIRST
+    const cached = await redisClient.get(redisKey);
+    if (cached) {
+      console.log("⚡ Students list from Redis");
+      return res.json({
+        success: true,
+        data: JSON.parse(cached),
+        source: "redis"
+      });
+    }
+
+    // 2️⃣ GET LECTURE CONTEXT
     const tt = await pool.query(
       `
       SELECT lecture_type, class_id, batch_id
       FROM timetable
       WHERE timetable_id = $1
-      AND teacher_id = $2
+        AND teacher_id = $2
       `,
       [timetable_id, teacherId]
     );
 
     if (!tt.rows.length) {
-      return res.status(404).json({ success: false, message: "Lecture not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Lecture not found"
+      });
     }
 
     const { lecture_type, class_id, batch_id } = tt.rows[0];
@@ -73,7 +86,7 @@ export const getStudentsForAttendance = async (req, res) => {
     let studentsQuery;
     let params;
 
-    // LECTURE → whole class
+    // 3️⃣ BUILD QUERY
     if (lecture_type === "LECTURE") {
       studentsQuery = `
         SELECT student_rollno, name
@@ -82,10 +95,7 @@ export const getStudentsForAttendance = async (req, res) => {
         ORDER BY student_rollno
       `;
       params = [class_id];
-    }
-
-    // PRACTICAL → batch students only
-    else {
+    } else {
       studentsQuery = `
         SELECT s.student_rollno, s.name
         FROM students s
@@ -98,16 +108,28 @@ export const getStudentsForAttendance = async (req, res) => {
 
     const students = await pool.query(studentsQuery, params);
 
+    // 4️⃣ SAVE TO REDIS (SHORT TTL)
+    await redisClient.set(
+      redisKey,
+      JSON.stringify(students.rows),
+      { EX: 60 * 60 * 6 } // 6 hours
+    );
+
     res.json({
       success: true,
-      data: students.rows
+      data: students.rows,
+      source: "database"
     });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
   }
 };
+
 
 
 // Get attendance data for a specific date and class
