@@ -219,6 +219,7 @@ export const refreshAccessToken = async (req, res) => {
       sameSite: "none",
       path: "/",
       maxAge: 15 * 60 * 1000,
+      domain: ".upasthit.in",
     });
 
     res.json({ success: true });
@@ -260,12 +261,14 @@ export const logout = async (req, res) => {
     secure: true,
     sameSite: "none",
     path: "/",
+    domain: ".upasthit.in",
   });
   res.clearCookie("refreshToken", {
     httpOnly: true,
     secure: true,
     sameSite: "none",
     path: "/",
+    domain: ".upasthit.in",
   });
 
   res.json({ success: true });
