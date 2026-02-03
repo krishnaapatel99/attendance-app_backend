@@ -10,6 +10,7 @@ import studentRoutes from "./src/routes/studentRoutes.js";
 import timetableRoutes from "./src/routes/timetableRoutes.js";
 import insertDataRoutes from "./src/routes/insertDataRoutes.js";
 import otpRoutes from "./src/routes/otpRoutes.js";
+import chatbotRoutes from "./src/routes/chatbotRoutes.js";
 import initDB from "./src/db/init.js";
 import emailRoutes from "./src/routes/emailRoute.js";
 import { checkRedisHealth } from "./src/utils/redisSafe.js";
@@ -86,6 +87,7 @@ app.use("/api/timetable", timetableRoutes);
 app.use("/api/insertData", insertDataRoutes);
 app.use("/api/otp", otpRoutes);
 app.use("/api/email", emailRoutes);
+app.use("/api/chatbot", chatbotRoutes);
 const PORT = process.env.PORT || 3000;
 
 

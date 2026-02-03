@@ -147,6 +147,43 @@ CREATE TABLE IF NOT EXISTS advisors (
 );
 
 /* =========================
+   ANNOUNCEMENTS
+========================= */
+
+CREATE TABLE IF NOT EXISTS announcements (
+  announcement_id SERIAL PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  content TEXT NOT NULL,
+  author_id VARCHAR(20) NOT NULL,
+  author_role VARCHAR(10) NOT NULL CHECK (author_role IN ('student', 'teacher')),
+  class_id INT REFERENCES classes(class_id) ON DELETE CASCADE,
+  target_audience VARCHAR(20) NOT NULL CHECK (target_audience IN ('all', 'class', 'batch')),
+  batch_id INT REFERENCES batches(batch_id) ON DELETE SET NULL,
+  priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS announcement_attachments (
+  attachment_id SERIAL PRIMARY KEY,
+  announcement_id INT NOT NULL REFERENCES announcements(announcement_id) ON DELETE CASCADE,
+  file_name VARCHAR(255) NOT NULL,
+  file_url TEXT NOT NULL,
+  file_type VARCHAR(50),
+  file_size INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS announcement_reads (
+  read_id SERIAL PRIMARY KEY,
+  announcement_id INT NOT NULL REFERENCES announcements(announcement_id) ON DELETE CASCADE,
+  student_rollno VARCHAR(20) NOT NULL REFERENCES students(student_rollno) ON DELETE CASCADE,
+  read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (announcement_id, student_rollno)
+);
+
+/* =========================
    INDEXES (PERFORMANCE)
 ========================= */
 
@@ -185,3 +222,63 @@ ON advisors (class_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_advisor_teacher_class
 ON advisors (teacher_id, class_id);
+
+/* =========================
+   ANNOUNCEMENT INDEXES
+========================= */
+
+CREATE INDEX IF NOT EXISTS idx_announcements_class
+ON announcements (class_id, is_active, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_announcements_author
+ON announcements (author_id, author_role, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_announcements_batch
+ON announcements (batch_id, is_active, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_announcement_reads_student
+ON announcement_reads (student_rollno, announcement_id);
+
+CREATE INDEX IF NOT EXISTS idx_announcement_reads_announcement
+ON announcement_reads (announcement_id, student_rollno);
+
+/* =========================
+   CHATBOT TABLES
+========================= */
+
+-- Chatbot usage tracking table
+CREATE TABLE IF NOT EXISTS chatbot_usage (
+    id SERIAL PRIMARY KEY,
+    student_rollno VARCHAR(50) NOT NULL,
+    question TEXT NOT NULL,
+    response TEXT,
+    tokens_used INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_rollno) REFERENCES students(student_rollno) ON DELETE CASCADE
+);
+
+-- Chatbot daily usage summary (for analytics)
+CREATE TABLE IF NOT EXISTS chatbot_daily_stats (
+    id SERIAL PRIMARY KEY,
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    total_questions INTEGER DEFAULT 0,
+    total_students INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    UNIQUE(date)
+);
+
+/* =========================
+   CHATBOT INDEXES
+========================= */
+
+CREATE INDEX IF NOT EXISTS idx_chatbot_usage_student 
+ON chatbot_usage(student_rollno);
+
+CREATE INDEX IF NOT EXISTS idx_chatbot_usage_created_at 
+ON chatbot_usage(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_chatbot_usage_student_date 
+ON chatbot_usage(student_rollno, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_chatbot_daily_stats_date 
+ON chatbot_daily_stats(date);
