@@ -1,7 +1,7 @@
 // Simple test script for chatbot endpoints
 import axios from 'axios';
 
-const BASE_URL = 'http://localhost:3000/api';
+const BASE_URL = 'https://attendance-app-backend-jdny.onrender.com/api';
 const TEST_STUDENT_ROLLNO = '22CS001'; // Replace with actual student roll number
 const TEST_PASSWORD = 'password123'; // Replace with actual password
 
