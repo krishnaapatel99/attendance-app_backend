@@ -145,43 +145,79 @@ CREATE TABLE IF NOT EXISTS advisors (
   class_id INT NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- CREATE TABLE IF NOT EXISTS attendance_manual_summary (
+--   manual_attendance_id SERIAL PRIMARY KEY,
 
-/* =========================
-   ANNOUNCEMENTS
-========================= */
+--   student_rollno VARCHAR(20) NOT NULL
+--     REFERENCES students(student_rollno)
+--     ON DELETE CASCADE,
 
-CREATE TABLE IF NOT EXISTS announcements (
-  announcement_id SERIAL PRIMARY KEY,
-  title VARCHAR(200) NOT NULL,
-  content TEXT NOT NULL,
-  author_id VARCHAR(20) NOT NULL,
-  author_role VARCHAR(10) NOT NULL CHECK (author_role IN ('student', 'teacher')),
-  class_id INT REFERENCES classes(class_id) ON DELETE CASCADE,
-  target_audience VARCHAR(20) NOT NULL CHECK (target_audience IN ('all', 'class', 'batch')),
-  batch_id INT REFERENCES batches(batch_id) ON DELETE SET NULL,
-  priority VARCHAR(10) DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
-  is_active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+--   subject_id VARCHAR(20) NOT NULL
+--     REFERENCES subjects(subject_id)
+--     ON DELETE CASCADE,
 
-CREATE TABLE IF NOT EXISTS announcement_attachments (
-  attachment_id SERIAL PRIMARY KEY,
-  announcement_id INT NOT NULL REFERENCES announcements(announcement_id) ON DELETE CASCADE,
-  file_name VARCHAR(255) NOT NULL,
-  file_url TEXT NOT NULL,
-  file_type VARCHAR(50),
-  file_size INT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+--   academic_year VARCHAR(9) NOT NULL,
 
-CREATE TABLE IF NOT EXISTS announcement_reads (
-  read_id SERIAL PRIMARY KEY,
-  announcement_id INT NOT NULL REFERENCES announcements(announcement_id) ON DELETE CASCADE,
-  student_rollno VARCHAR(20) NOT NULL REFERENCES students(student_rollno) ON DELETE CASCADE,
-  read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (announcement_id, student_rollno)
-);
+--   month INT NOT NULL CHECK (month BETWEEN 1 AND 12),
+
+--   total_lectures INT NOT NULL CHECK (total_lectures >= 0),
+
+--   attended_lectures INT NOT NULL CHECK (
+--     attended_lectures >= 0
+--     AND attended_lectures <= total_lectures
+--   ),
+
+--   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+--   CONSTRAINT uniq_manual_attendance
+--     UNIQUE (student_rollno, subject_id, academic_year, month)
+-- );
+
+
+-- /* =========================
+--   VIEW SQL
+-- ========================= */
+
+-- CREATE OR REPLACE VIEW student_attendance_merged AS
+-- SELECT
+--   student_rollno,
+--   subject_id,
+--   SUM(total_classes)::int AS total_classes,
+--   SUM(present_classes)::int AS present_classes
+-- FROM (
+--   /* ===============================
+--      MANUAL ATTENDANCE (JANUARY)
+--      =============================== */
+--   SELECT
+--     student_rollno,
+--     subject_id,
+--     total_lectures AS total_classes,
+--     attended_lectures AS present_classes
+--   FROM attendance_manual_summary
+
+--   UNION ALL
+
+--   /* ===============================
+--      REAL ATTENDANCE (FEB → ∞)
+--      =============================== */
+--   SELECT
+--     a.student_rollno,
+--     t.subject_id,
+--     SUM(t.duration) AS total_classes,
+--     SUM(
+--       CASE
+--         WHEN a.status = 'Present' THEN t.duration
+--         ELSE 0
+--       END
+--     ) AS present_classes
+--   FROM attendance a
+--   JOIN timetable t
+--     ON t.timetable_id = a.timetable_id
+--   WHERE a.submitted = true
+--   GROUP BY a.student_rollno, t.subject_id
+-- ) merged
+-- GROUP BY student_rollno, subject_id;
+
 
 /* =========================
    INDEXES (PERFORMANCE)
@@ -189,6 +225,10 @@ CREATE TABLE IF NOT EXISTS announcement_reads (
 
 CREATE INDEX IF NOT EXISTS idx_attendance_student_timetable_date
 ON attendance (student_rollno, timetable_id, attendance_date);
+
+-- CREATE INDEX IF NOT EXISTS idx_manual_attendance_student_subject
+-- ON attendance_manual_summary (student_rollno, subject_id);
+
 
 CREATE INDEX IF NOT EXISTS idx_attendance_timetable_date
 ON attendance (timetable_id, attendance_date);
@@ -222,63 +262,3 @@ ON advisors (class_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_advisor_teacher_class
 ON advisors (teacher_id, class_id);
-
-/* =========================
-   ANNOUNCEMENT INDEXES
-========================= */
-
-CREATE INDEX IF NOT EXISTS idx_announcements_class
-ON announcements (class_id, is_active, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_announcements_author
-ON announcements (author_id, author_role, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_announcements_batch
-ON announcements (batch_id, is_active, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_announcement_reads_student
-ON announcement_reads (student_rollno, announcement_id);
-
-CREATE INDEX IF NOT EXISTS idx_announcement_reads_announcement
-ON announcement_reads (announcement_id, student_rollno);
-
-/* =========================
-   CHATBOT TABLES
-========================= */
-
--- Chatbot usage tracking table
-CREATE TABLE IF NOT EXISTS chatbot_usage (
-    id SERIAL PRIMARY KEY,
-    student_rollno VARCHAR(50) NOT NULL,
-    question TEXT NOT NULL,
-    response TEXT,
-    tokens_used INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (student_rollno) REFERENCES students(student_rollno) ON DELETE CASCADE
-);
-
--- Chatbot daily usage summary (for analytics)
-CREATE TABLE IF NOT EXISTS chatbot_daily_stats (
-    id SERIAL PRIMARY KEY,
-    date DATE NOT NULL DEFAULT CURRENT_DATE,
-    total_questions INTEGER DEFAULT 0,
-    total_students INTEGER DEFAULT 0,
-    total_tokens INTEGER DEFAULT 0,
-    UNIQUE(date)
-);
-
-/* =========================
-   CHATBOT INDEXES
-========================= */
-
-CREATE INDEX IF NOT EXISTS idx_chatbot_usage_student 
-ON chatbot_usage(student_rollno);
-
-CREATE INDEX IF NOT EXISTS idx_chatbot_usage_created_at 
-ON chatbot_usage(created_at);
-
-CREATE INDEX IF NOT EXISTS idx_chatbot_usage_student_date 
-ON chatbot_usage(student_rollno, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_chatbot_daily_stats_date 
-ON chatbot_daily_stats(date);

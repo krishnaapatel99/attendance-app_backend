@@ -1,6 +1,7 @@
 import pool from "../config/database.js";
 import { redisGetSafe, redisSetSafe } from "../utils/redisSafe.js";
 
+
 const TIME_SLOTS = {
   1: "9:30-10:30",
   2: "10:30-11:30",
