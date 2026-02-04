@@ -325,21 +325,24 @@ export const getAttendanceSummary = async (req, res) => {
        2️⃣ Aggregate attendance ONCE (critical optimization)
     --------------------------------------------------- */
     const attendanceAggRes = await pool.query(
-      `
-    SELECT
-  a.student_rollno,
-  SUM(t.duration) AS total_lectures,
-  SUM(
-    CASE WHEN a.status = 'Present'
-    THEN t.duration ELSE 0 END
-  ) AS present_count
-FROM attendance a
-JOIN timetable t ON t.timetable_id = a.timetable_id
-WHERE a.timetable_id = ANY($1::int[])
-GROUP BY a.student_rollno
-      `,
-      [timetableIds]
-    );
+  `
+  SELECT
+    a.student_rollno,
+    COUNT(*)::int AS total_lectures,
+    SUM(
+      CASE
+        WHEN a.status = 'Present' THEN 1
+        ELSE 0
+      END
+    )::int AS present_count
+  FROM attendance a
+  WHERE a.timetable_id = ANY($1::int[])
+    AND a.submitted = true
+  GROUP BY a.student_rollno
+  `,
+  [timetableIds]
+);
+
 
     const attendanceMap = {};
     attendanceAggRes.rows.forEach(r => {

@@ -4,7 +4,7 @@ export const getAdvisorClassAttendance = async (req, res) => {
   try {
     const teacherId = req.user.id;
 
-    /* 1️⃣ Get advisor class */
+    /* 1️⃣ Verify advisor & get class */
     const advisorRes = await pool.query(
       `SELECT class_id FROM advisors WHERE teacher_id = $1`,
       [teacherId]
@@ -19,7 +19,7 @@ export const getAdvisorClassAttendance = async (req, res) => {
 
     const classId = advisorRes.rows[0].class_id;
 
-    /* 2️⃣ Fetch CURRENT MONTH attendance */
+    /* 2️⃣ Fetch CURRENT MONTH attendance (submitted only) */
     const result = await pool.query(
       `
       SELECT
@@ -27,7 +27,9 @@ export const getAdvisorClassAttendance = async (req, res) => {
         s.name AS student_name,
 
         COUNT(a.attendance_id)::int AS total_lectures,
-        SUM(CASE WHEN a.status = 'Present' THEN 1 ELSE 0 END)::int AS present_count,
+        SUM(
+          CASE WHEN a.status = 'Present' THEN 1 ELSE 0 END
+        )::int AS present_count,
 
         COALESCE(
           json_agg(
@@ -43,9 +45,12 @@ export const getAdvisorClassAttendance = async (req, res) => {
 
       FROM students s
 
+      /* attendance (ONLY submitted, current month) */
       LEFT JOIN attendance a
         ON a.student_rollno = s.student_rollno
-        AND DATE_TRUNC('month', a.attendance_date) = DATE_TRUNC('month', CURRENT_DATE)
+        AND a.submitted = true
+        AND DATE_TRUNC('month', a.attendance_date)
+            = DATE_TRUNC('month', CURRENT_DATE)
 
       LEFT JOIN timetable t
         ON t.timetable_id = a.timetable_id
@@ -53,22 +58,27 @@ export const getAdvisorClassAttendance = async (req, res) => {
       LEFT JOIN subjects sub
         ON sub.subject_id = t.subject_id
 
+      /* subject-wise aggregation */
       LEFT JOIN (
         SELECT
-          s2.student_rollno,
+          a2.student_rollno,
           t2.subject_id,
-          COUNT(*) AS total,
-          SUM(CASE WHEN a2.status = 'Present' THEN 1 ELSE 0 END) AS present
+          COUNT(*)::int AS total,
+          SUM(
+            CASE WHEN a2.status = 'Present' THEN 1 ELSE 0 END
+          )::int AS present
         FROM attendance a2
         JOIN timetable t2 ON t2.timetable_id = a2.timetable_id
-        JOIN students s2 ON s2.student_rollno = a2.student_rollno
-        WHERE DATE_TRUNC('month', a2.attendance_date) = DATE_TRUNC('month', CURRENT_DATE)
-        GROUP BY s2.student_rollno, t2.subject_id
+        WHERE a2.submitted = true
+          AND DATE_TRUNC('month', a2.attendance_date)
+              = DATE_TRUNC('month', CURRENT_DATE)
+        GROUP BY a2.student_rollno, t2.subject_id
       ) subj
         ON subj.student_rollno = s.student_rollno
         AND subj.subject_id = sub.subject_id
 
       WHERE s.class_id = $1
+
       GROUP BY s.student_rollno, s.name
       ORDER BY s.student_rollno
       `,
@@ -79,7 +89,7 @@ export const getAdvisorClassAttendance = async (req, res) => {
     res.json({
       success: true,
       classId,
-      month: new Date().toISOString().slice(0, 7), 
+      month: new Date().toISOString().slice(0, 7),
       students: result.rows.map((row) => ({
         rollNo: row.student_rollno,
         name: row.student_name,
@@ -92,6 +102,7 @@ export const getAdvisorClassAttendance = async (req, res) => {
         subjects: row.subject_wise,
       })),
     });
+
   } catch (error) {
     console.error("Advisor class attendance error:", error);
     res.status(500).json({
