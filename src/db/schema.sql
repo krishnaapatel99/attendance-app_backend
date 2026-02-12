@@ -145,78 +145,77 @@ CREATE TABLE IF NOT EXISTS advisors (
   class_id INT NOT NULL REFERENCES classes(class_id) ON DELETE CASCADE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
--- CREATE TABLE IF NOT EXISTS attendance_manual_summary (
---   manual_attendance_id SERIAL PRIMARY KEY,
 
---   student_rollno VARCHAR(20) NOT NULL
---     REFERENCES students(student_rollno)
---     ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS attendance_manual_summary (
+  manual_attendance_id SERIAL PRIMARY KEY,
 
---   subject_id VARCHAR(20) NOT NULL
---     REFERENCES subjects(subject_id)
---     ON DELETE CASCADE,
+  student_rollno VARCHAR(20) NOT NULL
+    REFERENCES students(student_rollno)
+    ON DELETE CASCADE,
 
---   academic_year VARCHAR(9) NOT NULL,
+  subject_id VARCHAR(20) NOT NULL
+    REFERENCES subjects(subject_id)
+    ON DELETE CASCADE,
 
---   month INT NOT NULL CHECK (month BETWEEN 1 AND 12),
+  academic_year VARCHAR(9) NOT NULL,
 
---   total_lectures INT NOT NULL CHECK (total_lectures >= 0),
+  month INT NOT NULL CHECK (month BETWEEN 1 AND 12),
 
---   attended_lectures INT NOT NULL CHECK (
---     attended_lectures >= 0
---     AND attended_lectures <= total_lectures
---   ),
+  total_lectures INT NOT NULL CHECK (total_lectures >= 0),
 
---   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  attended_lectures INT NOT NULL CHECK (
+    attended_lectures >= 0
+    AND attended_lectures <= total_lectures
+  ),
 
---   CONSTRAINT uniq_manual_attendance
---     UNIQUE (student_rollno, subject_id, academic_year, month)
--- );
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+  CONSTRAINT uniq_manual_attendance
+    UNIQUE (student_rollno, subject_id, academic_year, month)
+);
 
--- /* =========================
---   VIEW SQL
--- ========================= */
+CREATE OR REPLACE VIEW student_attendance_merged AS
+SELECT
+  student_rollno,
+  subject_id,
+  SUM(total_classes)::int AS total_classes,
+  SUM(present_classes)::int AS present_classes
+FROM (
 
--- CREATE OR REPLACE VIEW student_attendance_merged AS
--- SELECT
---   student_rollno,
---   subject_id,
---   SUM(total_classes)::int AS total_classes,
---   SUM(present_classes)::int AS present_classes
--- FROM (
---   /* ===============================
---      MANUAL ATTENDANCE (JANUARY)
---      =============================== */
---   SELECT
---     student_rollno,
---     subject_id,
---     total_lectures AS total_classes,
---     attended_lectures AS present_classes
---   FROM attendance_manual_summary
+  /* ===============================
+     MANUAL ATTENDANCE (JANUARY)
+     =============================== */
+  SELECT
+    m.student_rollno,
+    m.subject_id,
+    m.total_lectures AS total_classes,
+    m.attended_lectures AS present_classes
+  FROM attendance_manual_summary m
 
---   UNION ALL
+  UNION ALL
 
---   /* ===============================
---      REAL ATTENDANCE (FEB → ∞)
---      =============================== */
---   SELECT
---     a.student_rollno,
---     t.subject_id,
---     SUM(t.duration) AS total_classes,
---     SUM(
---       CASE
---         WHEN a.status = 'Present' THEN t.duration
---         ELSE 0
---       END
---     ) AS present_classes
---   FROM attendance a
---   JOIN timetable t
---     ON t.timetable_id = a.timetable_id
---   WHERE a.submitted = true
---   GROUP BY a.student_rollno, t.subject_id
--- ) merged
--- GROUP BY student_rollno, subject_id;
+  /* ===============================
+     REAL ATTENDANCE (FEB → ∞)
+     =============================== */
+  SELECT
+    a.student_rollno,
+    t.subject_id,
+    SUM(t.duration) AS total_classes,
+    SUM(
+      CASE
+        WHEN a.status = 'Present' THEN t.duration
+        ELSE 0
+      END
+    ) AS present_classes
+  FROM attendance a
+  JOIN timetable t
+    ON t.timetable_id = a.timetable_id
+  WHERE a.submitted = true
+    AND EXTRACT(MONTH FROM a.attendance_date) > 1
+  GROUP BY a.student_rollno, t.subject_id
+
+) merged
+GROUP BY student_rollno, subject_id;
 
 
 /* =========================
@@ -228,6 +227,9 @@ ON attendance (student_rollno, timetable_id, attendance_date);
 
 -- CREATE INDEX IF NOT EXISTS idx_manual_attendance_student_subject
 -- ON attendance_manual_summary (student_rollno, subject_id);
+CREATE INDEX IF NOT EXISTS idx_manual_student_subject_year
+ON attendance_manual_summary (student_rollno, subject_id, academic_year, month);
+
 
 
 CREATE INDEX IF NOT EXISTS idx_attendance_timetable_date
