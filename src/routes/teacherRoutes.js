@@ -12,6 +12,7 @@ import { getTeacherProfile } from "../controllers/teacherHomeController.js";
 import { getAttendanceSummary, getAttendanceCalendar, getTeacherLectureTypeSubjects, getTeacherClassesForSubjectType, getTeacherBatchesForSubjectClass, getCurrentLectureForTeacher } from "../controllers/teacherViewAttendanceController.js";
 import {getAbsentStudentsForUpdate, updateSubmittedAttendance} from "../controllers/absentStudentsController.js";
 import {getAdvisorClassAttendance, getStudentLecturesForAdvisor, updateLecturesByAdvisor} from "../controllers/advisorController.js";
+import { downloadAdvisorReport } from "../controllers/advisorReportController.js";
 const router = express.Router();
 
 router.get("/dashboard", verifyToken, requireTeacher, getTeacherDashboard);
@@ -31,4 +32,5 @@ router.put("/update-status",verifyToken,requireTeacher,updateSubmittedAttendance
 router.get("/advisor-students",verifyToken,requireTeacher,getAdvisorClassAttendance);
 router.get("/advisor-student-lectures",verifyToken,requireTeacher,getStudentLecturesForAdvisor);
 router.put("/advisor-mark-present",verifyToken,requireTeacher,updateLecturesByAdvisor);
+router.get("/download-report", verifyToken, requireTeacher, downloadAdvisorReport);
 export default router;
