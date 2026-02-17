@@ -52,9 +52,6 @@ CREATE TABLE IF NOT EXISTS student_batches (
   PRIMARY KEY (student_rollno, batch_id)
 );
 
-/* =========================
-   TIMETABLE
-========================= */
 
 CREATE TABLE IF NOT EXISTS timetable (
   timetable_id SERIAL PRIMARY KEY,
@@ -146,76 +143,25 @@ CREATE TABLE IF NOT EXISTS advisors (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS attendance_manual_summary (
-  manual_attendance_id SERIAL PRIMARY KEY,
+
+CREATE TABLE IF NOT EXISTS monthly_attendance_summary (
+  id SERIAL PRIMARY KEY,
 
   student_rollno VARCHAR(20) NOT NULL
     REFERENCES students(student_rollno)
-    ON DELETE CASCADE,
-
-  subject_id VARCHAR(20) NOT NULL
-    REFERENCES subjects(subject_id)
     ON DELETE CASCADE,
 
   academic_year VARCHAR(9) NOT NULL,
 
   month INT NOT NULL CHECK (month BETWEEN 1 AND 12),
 
-  total_lectures INT NOT NULL CHECK (total_lectures >= 0),
-
-  attended_lectures INT NOT NULL CHECK (
-    attended_lectures >= 0
-    AND attended_lectures <= total_lectures
-  ),
+  monthly_percentage NUMERIC(5,2) NOT NULL,
 
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-  CONSTRAINT uniq_manual_attendance
-    UNIQUE (student_rollno, subject_id, academic_year, month)
+  UNIQUE (student_rollno, academic_year, month)
 );
 
-CREATE OR REPLACE VIEW student_attendance_merged AS
-SELECT
-  student_rollno,
-  subject_id,
-  SUM(total_classes)::int AS total_classes,
-  SUM(present_classes)::int AS present_classes
-FROM (
-
-  /* ===============================
-     MANUAL ATTENDANCE (JANUARY)
-     =============================== */
-  SELECT
-    m.student_rollno,
-    m.subject_id,
-    m.total_lectures AS total_classes,
-    m.attended_lectures AS present_classes
-  FROM attendance_manual_summary m
-
-  UNION ALL
-
-  /* ===============================
-     REAL ATTENDANCE (FEB → ∞)
-     =============================== */
-  SELECT
-    a.student_rollno,
-    t.subject_id,
-    SUM(t.duration) AS total_classes,
-    SUM(
-      CASE
-        WHEN a.status = 'Present' THEN t.duration
-        ELSE 0
-      END
-    ) AS present_classes
-  FROM attendance a
-  JOIN timetable t
-    ON t.timetable_id = a.timetable_id
-  WHERE a.submitted = true
-    AND EXTRACT(MONTH FROM a.attendance_date) > 1
-  GROUP BY a.student_rollno, t.subject_id
-
-) merged
-GROUP BY student_rollno, subject_id;
 
 
 /* =========================
@@ -264,3 +210,12 @@ ON advisors (class_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_advisor_teacher_class
 ON advisors (teacher_id, class_id);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_student_date
+ON attendance (student_rollno, attendance_date, submitted);
+
+CREATE INDEX IF NOT EXISTS idx_timetable_lecture_type
+ON timetable (lecture_type, timetable_id);
+
+CREATE INDEX IF NOT EXISTS idx_monthly_student_year
+ON monthly_attendance_summary (student_rollno, academic_year, month);
