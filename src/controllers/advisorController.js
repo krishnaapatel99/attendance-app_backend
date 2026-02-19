@@ -1,16 +1,20 @@
 import pool from "../config/database.js";
 
+
+
 export const getAdvisorClassAttendance = async (req, res) => {
   try {
     const teacherId = req.user.id;
 
-    /* 1️⃣ Verify advisor & get class */
+    /* ---------------------------------------------------
+       1️⃣ Verify advisor
+    --------------------------------------------------- */
     const advisorRes = await pool.query(
       `SELECT class_id FROM advisors WHERE teacher_id = $1`,
       [teacherId]
     );
 
-    if (advisorRes.rows.length === 0) {
+    if (!advisorRes.rowCount) {
       return res.status(403).json({
         success: false,
         message: "You are not assigned as an advisor",
@@ -19,98 +23,174 @@ export const getAdvisorClassAttendance = async (req, res) => {
 
     const classId = advisorRes.rows[0].class_id;
 
-    /* 2️⃣ Fetch CURRENT MONTH attendance (submitted only) */
-    const result = await pool.query(
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
+    /* ---------------------------------------------------
+       2️⃣ Fetch all students of advisor class
+    --------------------------------------------------- */
+    const studentsRes = await pool.query(
       `
-      SELECT
-        s.student_rollno,
-        s.name AS student_name,
-
-        COUNT(a.attendance_id)::int AS total_lectures,
-        SUM(
-          CASE WHEN a.status = 'Present' THEN 1 ELSE 0 END
-        )::int AS present_count,
-
-        COALESCE(
-          json_agg(
-            DISTINCT jsonb_build_object(
-              'subject_id', sub.subject_id,
-              'subject_name', sub.subject_name,
-              'total', subj.total,
-              'present', subj.present
-            )
-          ) FILTER (WHERE sub.subject_id IS NOT NULL),
-          '[]'
-        ) AS subject_wise
-
-      FROM students s
-
-      /* attendance (ONLY submitted, current month) */
-      LEFT JOIN attendance a
-        ON a.student_rollno = s.student_rollno
-        AND a.submitted = true
-        AND DATE_TRUNC('month', a.attendance_date)
-            = DATE_TRUNC('month', CURRENT_DATE)
-
-      LEFT JOIN timetable t
-        ON t.timetable_id = a.timetable_id
-
-      LEFT JOIN subjects sub
-        ON sub.subject_id = t.subject_id
-
-      /* subject-wise aggregation */
-      LEFT JOIN (
-        SELECT
-          a2.student_rollno,
-          t2.subject_id,
-          COUNT(*)::int AS total,
-          SUM(
-            CASE WHEN a2.status = 'Present' THEN 1 ELSE 0 END
-          )::int AS present
-        FROM attendance a2
-        JOIN timetable t2 ON t2.timetable_id = a2.timetable_id
-        WHERE a2.submitted = true
-          AND DATE_TRUNC('month', a2.attendance_date)
-              = DATE_TRUNC('month', CURRENT_DATE)
-        GROUP BY a2.student_rollno, t2.subject_id
-      ) subj
-        ON subj.student_rollno = s.student_rollno
-        AND subj.subject_id = sub.subject_id
-
-      WHERE s.class_id = $1
-
-      GROUP BY s.student_rollno, s.name
-      ORDER BY s.student_rollno
+      SELECT student_rollno, name
+      FROM students
+      WHERE class_id = $1
+      ORDER BY student_rollno
       `,
       [classId]
     );
 
-    /* 3️⃣ Format response */
+    if (!studentsRes.rowCount) {
+      return res.json({
+        success: true,
+        students: [],
+      });
+    }
+
+    const students = studentsRes.rows;
+
+    /* ---------------------------------------------------
+       3️⃣ Current month subject-wise (LECTURE only)
+    --------------------------------------------------- */
+    const subjectRes = await pool.query(
+      `
+      SELECT
+        a.student_rollno,
+        t.subject_id,
+        sub.subject_name,
+        COUNT(*)::int AS total_lectures,
+        SUM(
+          CASE WHEN a.status = 'Present' THEN 1 ELSE 0 END
+        )::int AS present_count
+      FROM attendance a
+      JOIN timetable t
+        ON t.timetable_id = a.timetable_id
+        AND t.class_id = $1
+        AND t.lecture_type = 'LECTURE'
+      JOIN subjects sub
+        ON sub.subject_id = t.subject_id
+      WHERE a.submitted = true
+        AND EXTRACT(MONTH FROM a.attendance_date) = $2
+        AND EXTRACT(YEAR FROM a.attendance_date) = $3
+      GROUP BY a.student_rollno, t.subject_id, sub.subject_name
+      `,
+      [classId, currentMonth, currentYear]
+    );
+
+    /* ---------------------------------------------------
+       4️⃣ Stored monthly data
+    --------------------------------------------------- */
+    const monthlyStoredRes = await pool.query(
+      `
+      SELECT student_rollno, monthly_percentage
+      FROM monthly_attendance_summary
+      WHERE student_rollno = ANY($1::text[])
+      `,
+      [students.map(s => s.student_rollno)]
+    );
+
+    /* ---------------------------------------------------
+       5️⃣ Organize subject data
+    --------------------------------------------------- */
+    const subjectMap = {};
+
+    subjectRes.rows.forEach(row => {
+      const subjectPercentage =
+        row.total_lectures > 0
+          ? Math.round((row.present_count / row.total_lectures) * 100)
+          : 0;
+
+      if (!subjectMap[row.student_rollno]) {
+        subjectMap[row.student_rollno] = [];
+      }
+
+      subjectMap[row.student_rollno].push({
+        subject_id: row.subject_id,
+        subject_name: row.subject_name,
+        total_lectures: row.total_lectures,
+        present: row.present_count,
+        percentage: subjectPercentage
+      });
+    });
+
+    /* ---------------------------------------------------
+       6️⃣ Organize stored months
+    --------------------------------------------------- */
+    const monthlyMap = {};
+
+    monthlyStoredRes.rows.forEach(row => {
+      if (!monthlyMap[row.student_rollno]) {
+        monthlyMap[row.student_rollno] = [];
+      }
+      monthlyMap[row.student_rollno].push(
+        Number(row.monthly_percentage)
+      );
+    });
+
+    /* ---------------------------------------------------
+       7️⃣ Build final result per student
+    --------------------------------------------------- */
+    const finalStudents = students.map(student => {
+      const subjects = subjectMap[student.student_rollno] || [];
+
+      // Current month %
+      const currentMonthPercentage =
+        subjects.length > 0
+          ? Math.round(
+              subjects.reduce((sum, s) => sum + s.percentage, 0) /
+                subjects.length
+            )
+          : 0;
+
+      // Stored months
+      const storedMonths = monthlyMap[student.student_rollno] || [];
+
+      // Overall calculation
+      const allMonths =
+        currentMonthPercentage > 0
+          ? [...storedMonths, currentMonthPercentage]
+          : storedMonths;
+
+      const overallPercentage =
+        allMonths.length > 0
+          ? Math.round(
+              allMonths.reduce((sum, m) => sum + m, 0) /
+                allMonths.length
+            )
+          : 0;
+
+      // Total lectures current month
+      const totalLecturesCurrentMonth = subjects.reduce(
+        (sum, s) => sum + s.total_lectures,
+        0
+      );
+
+      return {
+        rollNo: student.student_rollno,
+        name: student.name,
+        totalLecturesCurrentMonth,
+        currentMonthPercentage,
+        overallPercentage,
+        subjects
+      };
+    });
+
+    /* --------------------------------------------------- */
     res.json({
       success: true,
-      classId,
-      month: new Date().toISOString().slice(0, 7),
-      students: result.rows.map((row) => ({
-        rollNo: row.student_rollno,
-        name: row.student_name,
-        totalLectures: row.total_lectures,
-        present: row.present_count,
-        percentage:
-          row.total_lectures > 0
-            ? Math.round((row.present_count / row.total_lectures) * 100)
-            : 0,
-        subjects: row.subject_wise,
-      })),
+      month: `${currentYear}-${String(currentMonth).padStart(2, "0")}`,
+      students: finalStudents
     });
 
   } catch (error) {
-    console.error("Advisor class attendance error:", error);
+    console.error("Advisor attendance error:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",
     });
   }
 };
+
 
 
 

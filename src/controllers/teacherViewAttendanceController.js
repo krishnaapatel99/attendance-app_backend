@@ -285,12 +285,7 @@ export const getTeacherBatchesForSubjectClass = async (req, res) => {
 export const getAttendanceSummary = async (req, res) => {
   try {
     const teacherId = req.user.id;
-    const {
-      subject_id,
-      lecture_type,
-      class_id,
-      batch_id
-    } = req.query;
+    const { subject_id, lecture_type, class_id, batch_id } = req.query;
 
     if (!subject_id || !lecture_type || !class_id) {
       return res.status(400).json({
@@ -299,9 +294,7 @@ export const getAttendanceSummary = async (req, res) => {
       });
     }
 
-    /* ---------------------------------------------------
-       1️⃣ Get timetable IDs (VERY selective query)
-    --------------------------------------------------- */
+    // 1️⃣ Get timetable IDs
     const timetableRes = await pool.query(
       `
       SELECT timetable_id
@@ -321,40 +314,50 @@ export const getAttendanceSummary = async (req, res) => {
 
     const timetableIds = timetableRes.rows.map(r => r.timetable_id);
 
-    /* ---------------------------------------------------
-       2️⃣ Aggregate attendance ONCE (critical optimization)
-    --------------------------------------------------- */
-    const attendanceAggRes = await pool.query(
-  `
-  SELECT
-    a.student_rollno,
-    COUNT(*)::int AS total_lectures,
-    SUM(
-      CASE
-        WHEN a.status = 'Present' THEN 1
-        ELSE 0
-      END
-    )::int AS present_count
-  FROM attendance a
-  WHERE a.timetable_id = ANY($1::int[])
-    AND a.submitted = true
-  GROUP BY a.student_rollno
-  `,
-  [timetableIds]
-);
-
+    // 2️⃣ Subject-based percentage per student
+    const attendanceRes = await pool.query(
+      `
+      WITH subject_attendance AS (
+        SELECT
+          a.student_rollno,
+          t.subject_id,
+          COUNT(*) AS total_lectures,
+          SUM(
+            CASE WHEN a.status = 'Present' THEN 1 ELSE 0 END
+          ) AS present_count
+        FROM attendance a
+        JOIN timetable t ON t.timetable_id = a.timetable_id
+        WHERE a.timetable_id = ANY($1::int[])
+          AND a.submitted = true
+        GROUP BY a.student_rollno, t.subject_id
+      )
+      SELECT
+        student_rollno,
+        SUM(total_lectures)::int AS total_lectures,
+        SUM(present_count)::int AS present_count,
+        ROUND(
+          AVG(
+            ROUND(
+              (present_count::numeric / NULLIF(total_lectures,0)) * 100
+            )
+          )
+        )::int AS attendance_percentage
+      FROM subject_attendance
+      GROUP BY student_rollno
+      `,
+      [timetableIds]
+    );
 
     const attendanceMap = {};
-    attendanceAggRes.rows.forEach(r => {
+    attendanceRes.rows.forEach(r => {
       attendanceMap[r.student_rollno] = {
         total_lectures: Number(r.total_lectures),
-        present_count: Number(r.present_count)
+        present_count: Number(r.present_count),
+        attendance_percentage: Number(r.attendance_percentage)
       };
     });
 
-    /* ---------------------------------------------------
-       3️⃣ Fetch students (batch-aware)
-    --------------------------------------------------- */
+    // 3️⃣ Fetch students
     const studentsRes = await pool.query(
       `
       SELECT
@@ -376,26 +379,20 @@ export const getAttendanceSummary = async (req, res) => {
       [class_id, batch_id || null]
     );
 
-    /* ---------------------------------------------------
-       4️⃣ Merge result (JS is cheap, DB is expensive)
-    --------------------------------------------------- */
+    // 4️⃣ Merge
     const data = studentsRes.rows.map(s => {
       const att = attendanceMap[s.student_rollno] || {
         total_lectures: 0,
-        present_count: 0
+        present_count: 0,
+        attendance_percentage: 0
       };
-
-      const percentage =
-        att.total_lectures === 0
-          ? 0
-          : ((att.present_count / att.total_lectures) * 100).toFixed(2);
 
       return {
         student_rollno: s.student_rollno,
         name: s.name,
         total_lectures: att.total_lectures,
         present_count: att.present_count,
-        attendance_percentage: percentage
+        attendance_percentage: att.attendance_percentage
       };
     });
 
@@ -460,19 +457,21 @@ export const getAttendanceCalendar = async (req, res) => {
     const timetableIds = timetableRes.rows.map(r => r.timetable_id);
 
     const result = await pool.query(
-      `
-      SELECT
-        attendance_date,
-        status
-      FROM attendance
-      WHERE student_rollno = $1
-        AND timetable_id = ANY($2::int[])
-        AND DATE_TRUNC('month', attendance_date)
-            = DATE_TRUNC('month', $3::date)
-      ORDER BY attendance_date
-      `,
-      [student_rollno, timetableIds, `${month}-01`]
-    );
+  `
+  SELECT
+    attendance_date,
+    status
+  FROM attendance
+  WHERE student_rollno = $1
+    AND timetable_id = ANY($2::int[])
+    AND submitted = true
+    AND attendance_date >= $3::date
+    AND attendance_date < ($3::date + INTERVAL '1 month')
+  ORDER BY attendance_date
+  `,
+  [student_rollno, timetableIds, `${month}-01`]
+);
+
 
     res.json({
       success: true,
