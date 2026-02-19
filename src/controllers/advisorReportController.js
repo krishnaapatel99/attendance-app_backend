@@ -1,7 +1,6 @@
 import PDFDocument from "pdfkit";
 import ExcelJS from "exceljs";
 import pool from "../config/database.js";
-import redisClient from "../config/redis.js";
 
 export const downloadAdvisorReport = async (req, res) => {
   try {
@@ -12,6 +11,16 @@ export const downloadAdvisorReport = async (req, res) => {
       return res.status(400).json({ message: "Missing parameters" });
     }
 
+    if (type !== "monthly") {
+      return res.status(400).json({ message: "Only monthly report supported" });
+    }
+
+    if (!month) {
+      return res.status(400).json({ message: "Month required" });
+    }
+
+    const isJanuary = Number(month) === 1;
+
     // 🔐 VERIFY ADVISOR
     const advisorResult = await pool.query(
       `SELECT c.class_id, c.year, c.branch
@@ -21,14 +30,14 @@ export const downloadAdvisorReport = async (req, res) => {
       [teacherId]
     );
 
-    if (advisorResult.rowCount === 0) {
+    if (!advisorResult.rowCount) {
       return res.status(403).json({ message: "Only advisor allowed" });
     }
 
     const { class_id, year, branch } = advisorResult.rows[0];
     const divisionName = `${year}-${branch}`;
 
-    // 👨‍🎓 GET STUDENTS
+    // 👨‍🎓 STUDENTS
     const studentsResult = await pool.query(
       `SELECT student_rollno, name
        FROM students
@@ -39,112 +48,95 @@ export const downloadAdvisorReport = async (req, res) => {
 
     const students = studentsResult.rows;
 
-    // 📚 GET SUBJECTS WITH NAMES
-    const subjectsResult = await pool.query(
-      `
-      SELECT DISTINCT s.subject_id, s.subject_name
-      FROM subjects s
-      WHERE s.subject_id IN (
-          SELECT subject_id
-          FROM attendance_manual_summary
-          WHERE academic_year = $1
-
-          UNION
-
-          SELECT t.subject_id
-          FROM attendance a
-          JOIN timetable t ON t.timetable_id = a.timetable_id
-          WHERE a.submitted = true
-          AND t.class_id = $2
-          AND t.academic_year = $1
-      )
-      ORDER BY s.subject_name
-      `,
-      [academic_year, class_id]
-    );
-
-    const subjects = subjectsResult.rows; // contains id + name
+    if (!students.length) {
+      return res.status(400).json({ message: "No students found" });
+    }
 
     // ======================
     // ATTENDANCE QUERY
     // ======================
+
     let attendanceQuery;
     let params;
 
-    if (type === "monthly") {
-
-      if (!month) {
-        return res.status(400).json({ message: "Month required" });
-      }
-
-      if (Number(month) === 1) {
-        attendanceQuery = `
-          SELECT a.student_rollno, a.subject_id,
-                 a.total_lectures AS total,
-                 a.attended_lectures AS present
-          FROM attendance_manual_summary a
-          JOIN students s ON s.student_rollno = a.student_rollno
-          WHERE a.academic_year = $1
-          AND a.month = $2
-          AND s.class_id = $3
-        `;
-        params = [academic_year, month, class_id];
-
-      } else {
-        attendanceQuery = `
-          SELECT a.student_rollno, t.subject_id,
-                 SUM(t.duration) AS total,
-                 SUM(CASE WHEN a.status='Present'
-                          THEN t.duration ELSE 0 END) AS present
-          FROM attendance a
-          JOIN timetable t ON t.timetable_id = a.timetable_id
-          WHERE a.submitted = true
-          AND t.class_id = $1
-          AND t.academic_year = $2
-          AND EXTRACT(MONTH FROM a.attendance_date) = $3
-          GROUP BY a.student_rollno, t.subject_id
-        `;
-        params = [class_id, academic_year, month];
-      }
-
-    } else {
-
+    if (isJanuary) {
+      // 🔹 JANUARY (OVERALL ONLY)
       attendanceQuery = `
-        SELECT student_rollno, subject_id,
-               SUM(total) AS total,
-               SUM(present) AS present
-        FROM (
-           SELECT a.student_rollno, a.subject_id,
-                  a.total_lectures AS total,
-                  a.attended_lectures AS present
-           FROM attendance_manual_summary a
-           JOIN students s ON s.student_rollno = a.student_rollno
-           WHERE a.academic_year = $1
-           AND s.class_id = $2
-
-           UNION ALL
-
-           SELECT a.student_rollno, t.subject_id,
-                  t.duration,
-                  CASE WHEN a.status='Present'
-                       THEN t.duration ELSE 0 END
-           FROM attendance a
-           JOIN timetable t ON t.timetable_id = a.timetable_id
-           WHERE a.submitted = true
-           AND t.class_id = $2
-           AND t.academic_year = $1
-        ) merged
-        GROUP BY student_rollno, subject_id
+        SELECT student_rollno,
+               monthly_percentage AS percentage
+        FROM monthly_attendance_summary
+        WHERE academic_year = $1
+        AND month = $2
+        AND student_rollno IN (
+            SELECT student_rollno
+            FROM students
+            WHERE class_id = $3
+        )
       `;
-
-      params = [academic_year, class_id];
+      params = [academic_year, month, class_id];
+    } else {
+      // 🔹 OTHER MONTHS (SUBJECT WISE, LECTURE ONLY)
+      attendanceQuery = `
+        SELECT 
+          a.student_rollno, 
+          t.subject_id,
+          ROUND(
+            (
+              SUM(CASE WHEN a.status = 'Present' THEN t.duration ELSE 0 END)
+              * 100.0
+            )
+            / NULLIF(SUM(t.duration), 0),
+            2
+          ) AS percentage
+        FROM attendance a
+        JOIN timetable t 
+          ON t.timetable_id = a.timetable_id
+        WHERE a.submitted = true
+        AND t.class_id = $1
+        AND t.academic_year = $2
+        AND t.lecture_type = 'LECTURE'
+        AND EXTRACT(MONTH FROM a.attendance_date) = $3
+        GROUP BY a.student_rollno, t.subject_id
+      `;
+      params = [class_id, academic_year, month];
     }
 
     const attendanceResult = await pool.query(attendanceQuery, params);
 
     // ======================
+    // SUBJECTS (ONLY FOR NON-JAN)
+    // ======================
+
+    let subjects = [];
+
+    if (!isJanuary) {
+      const subjectsResult = await pool.query(
+        `
+        SELECT DISTINCT s.subject_id, s.subject_name
+        FROM subjects s
+        WHERE s.subject_id IN (
+            SELECT DISTINCT t.subject_id
+            FROM timetable t
+            WHERE t.class_id = $1
+            AND t.academic_year = $2
+            AND t.lecture_type = 'LECTURE'
+        )
+        ORDER BY s.subject_name
+        `,
+        [class_id, academic_year]
+      );
+
+      subjects = subjectsResult.rows;
+
+      if (!subjects.length) {
+        return res.status(400).json({ message: "No lecture subjects found" });
+      }
+    }
+
+    // ======================
     // TRANSFORM DATA
     // ======================
+
     const matrix = {};
 
     students.forEach(s => {
@@ -156,98 +148,116 @@ export const downloadAdvisorReport = async (req, res) => {
     });
 
     attendanceResult.rows.forEach(row => {
-      const percentage =
-        row.total > 0
-          ? Math.round((row.present / row.total) * 100)
-          : 0;
+      if (!matrix[row.student_rollno]) return;
 
-      if (matrix[row.student_rollno]) {
-        matrix[row.student_rollno].subjects[row.subject_id] = percentage;
+      if (isJanuary) {
+        matrix[row.student_rollno].avg = Number(row.percentage) || 0;
+      } else {
+        matrix[row.student_rollno].subjects[row.subject_id] =
+          Number(row.percentage) || 0;
       }
     });
 
-    Object.keys(matrix).forEach(roll => {
-      const values = Object.values(matrix[roll].subjects);
-      matrix[roll].avg =
-        values.length > 0
-          ? Math.round(values.reduce((a, b) => a + b, 0) / values.length)
-          : 0;
-    });
+    if (!isJanuary) {
+      Object.keys(matrix).forEach(roll => {
+        const values = Object.values(matrix[roll].subjects);
+        matrix[roll].avg =
+          values.length
+            ? Math.round(values.reduce((a, b) => a + b, 0) / values.length)
+            : 0;
+      });
+    }
 
     // ======================
     // PDF EXPORT
     // ======================
-    if (format === "pdf") {
-if (!subjects || subjects.length === 0) {
-  return res.status(400).json({
-    message: "No subjects found for selected criteria"
+if (format === "pdf") {
+
+  const doc = new PDFDocument({
+    size: "A4",
+    layout: "landscape",
+    margin: 30
   });
-}
-      const doc = new PDFDocument({
-        size: "A4",
-        layout: "landscape",
-        margin: 30
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename=${divisionName}-${month}.pdf`
+  );
+
+  doc.pipe(res);
+
+  doc.font("Helvetica-Bold")
+     .fontSize(16)
+     .text("Attendance Report", { align: "center" });
+
+  doc.moveDown(0.3);
+
+  doc.font("Helvetica")
+     .fontSize(12)
+     .text(`Month: ${month} | Academic Year: ${academic_year}`, {
+       align: "center"
+     });
+
+  doc.moveDown(2);
+
+  const startX = 30;
+  let y = doc.y;
+  const rowHeight = 25;
+  const isJanuary = Number(month) === 1;
+
+  const srWidth = 45;
+  const rollWidth = 70;
+  const nameWidth = 220;
+  const avgWidth = 60;
+
+  const pageWidth = doc.page.width - 60;
+
+  let subjectWidth = 0;
+
+  if (!isJanuary) {
+    subjectWidth =
+      (pageWidth - (srWidth + rollWidth + nameWidth + avgWidth))
+      / subjects.length;
+  }
+
+  // ================= HEADER =================
+
+  const drawHeader = () => {
+
+    let x = startX;
+
+    doc.font("Helvetica-Bold").fontSize(10);
+
+    if (isJanuary) {
+
+      // Simple header
+      doc.rect(x, y, srWidth, rowHeight).stroke();
+      doc.text("SR NO", x, y + 8, { width: srWidth, align: "center" });
+      x += srWidth;
+
+      doc.rect(x, y, rollWidth, rowHeight).stroke();
+      doc.text("ROLL NO", x, y + 8, { width: rollWidth, align: "center" });
+      x += rollWidth;
+
+      doc.rect(x, y, nameWidth, rowHeight).stroke();
+      doc.text("NAME OF THE STUDENT", x, y + 8, {
+        width: nameWidth,
+        align: "center"
       });
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=${divisionName}-${type}.pdf`
-      );
+      x += nameWidth;
 
-      doc.pipe(res);
+      doc.rect(x, y, avgWidth, rowHeight).stroke();
+      doc.text("AVG", x, y + 8, {
+        width: avgWidth,
+        align: "center"
+      });
 
-      doc.font("Helvetica-Bold")
-         .fontSize(16)
-         .text("Attendance Report", { align: "center" });
+      y += rowHeight;
 
-      doc.moveDown(0.3);
+    } else {
 
-      doc.font("Helvetica")
-         .fontSize(12)
-         .text(
-           `${month ? `Month: ${month}` : "Overall"}  |  Academic Year: ${academic_year}`,
-           { align: "center" }
-         );
-
-      doc.moveDown(2);
-
-      const startX = 30;
-      let y = doc.y;
-      const rowHeight = 25;
-
-
-      const pageWidth = doc.page.width - 60;
-
-
-      const srWidth = 40;
-      const rollWidth = 60;
-      const nameWidth = 180;
-      const avgWidth = 60;
-
-      const remainingWidth =
-        pageWidth - (srWidth + rollWidth + nameWidth + avgWidth);
-
-      const subjectWidth = remainingWidth / subjects.length;
-
-      const widths = [
-        srWidth,
-        rollWidth,
-        nameWidth,
-        ...subjects.map(() => subjectWidth),
-        avgWidth
-      ];
-
-      const totalTableWidth =
-        srWidth + rollWidth + nameWidth +
-        subjects.length * subjectWidth + avgWidth;
-
-      const tableTopY = y;
-
-      let x = startX;
-
-      doc.font("Helvetica-Bold").fontSize(10);
-
-      // Header Row 1
+      // Row 1 (merged header)
       doc.rect(x, y, srWidth, rowHeight * 2).stroke();
       doc.text("SR\nNO", x, y + 8, { width: srWidth, align: "center" });
       x += srWidth;
@@ -264,19 +274,24 @@ if (!subjects || subjects.length === 0) {
       x += nameWidth;
 
       const subjectHeaderWidth = subjects.length * subjectWidth;
+
       doc.rect(x, y, subjectHeaderWidth, rowHeight).stroke();
       doc.text("SUBJECT % ATTENDANCE", x, y + 8, {
         width: subjectHeaderWidth,
         align: "center"
       });
+
       x += subjectHeaderWidth;
 
       doc.rect(x, y, avgWidth, rowHeight * 2).stroke();
-      doc.text("AVG", x, y + 15, { width: avgWidth, align: "center" });
+      doc.text("AVG", x, y + 15, {
+        width: avgWidth,
+        align: "center"
+      });
 
       y += rowHeight;
 
-      // Header Row 2
+      // Row 2 (subject names)
       x = startX + srWidth + rollWidth + nameWidth;
 
       subjects.forEach(sub => {
@@ -289,22 +304,29 @@ if (!subjects || subjects.length === 0) {
       });
 
       y += rowHeight;
+    }
+  };
 
-      doc.font("Helvetica").fontSize(9);
+  drawHeader();
 
-      let sr = 1;
+  doc.font("Helvetica").fontSize(9);
 
-      Object.keys(matrix).forEach(roll => {
+  let sr = 1;
 
-        if (y > 520) {
-          doc.addPage();
-          y = 40;
-        }
+  Object.keys(matrix).forEach(roll => {
 
-        let x = startX;
-        const student = matrix[roll];
+    if (y + rowHeight > doc.page.height - 40) {
+      doc.addPage();
+      y = 40;
+      drawHeader();
+    }
 
-        const rowData = [
+    let x = startX;
+    const student = matrix[roll];
+
+    const rowData = isJanuary
+      ? [sr++, roll, student.name, student.avg]
+      : [
           sr++,
           roll,
           student.name,
@@ -314,98 +336,94 @@ if (!subjects || subjects.length === 0) {
           student.avg
         ];
 
-        rowData.forEach((cell, i) => {
+    rowData.forEach((cell, i) => {
 
-          doc.rect(x, y, widths[i], rowHeight).stroke();
+      let width;
 
-          if (i > 2 && cell < 75) {
-            doc.fillColor("red");
-          }
+      if (i === 0) width = srWidth;
+      else if (i === 1) width = rollWidth;
+      else if (i === 2) width = nameWidth;
+      else if (i === rowData.length - 1) width = avgWidth;
+      else width = subjectWidth;
 
-          doc.text(cell, x, y + 8, {
-            width: widths[i],
-            align: "center"
-          });
+      doc.rect(x, y, width, rowHeight).stroke();
 
-          doc.fillColor("black");
-          x += widths[i];
-        });
+      if (!isJanuary && i > 2 && i < rowData.length - 1 && cell < 75) {
+        doc.fillColor("red");
+      }
 
-        y += rowHeight;
+      if (isJanuary && i === 3 && cell < 75) {
+        doc.fillColor("red");
+      }
+
+      doc.text(cell, x, y + 8, {
+        width,
+        align: "center"
       });
 
-      const tableBottomY = y;
+      doc.fillColor("black");
+      x += width;
+    });
 
-      doc.lineWidth(2);
-      doc.rect(
-        startX,
-        tableTopY,
-        totalTableWidth,
-        tableBottomY - tableTopY
-      ).stroke();
-      doc.lineWidth(1);
+    y += rowHeight;
+  });
 
-      doc.end();
-      return;
-    }
+  doc.end();
+  return;
+}
+
+
 
     // ======================
     // EXCEL EXPORT
     // ======================
-    else {
 
-      const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet("Attendance");
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Attendance");
 
-      const header = [
-        "Sr",
-        "Roll",
-        "Name",
-        ...subjects.map(s => s.subject_name),
-        "AVG"
-      ];
-
-      sheet.addRow(header);
-
-      let sr = 1;
-
-      Object.keys(matrix).forEach(roll => {
-
-        const student = matrix[roll];
-
-        const row = [
-          sr++,
-          roll,
-          student.name,
-          ...subjects.map(sub =>
-            student.subjects[sub.subject_id] ?? 0
-          ),
-          student.avg
+    const header = isJanuary
+      ? ["Sr", "Roll", "Name", "Monthly %"]
+      : [
+          "Sr",
+          "Roll",
+          "Name",
+          ...subjects.map(s => s.subject_name),
+          "AVG"
         ];
 
-        const addedRow = sheet.addRow(row);
+    sheet.addRow(header);
 
-        addedRow.eachCell((cell, colNumber) => {
-          if (colNumber > 3 && cell.value < 75) {
-            cell.font = { color: { argb: "FFFF0000" } };
-          }
-        });
-      });
+    let sr = 1;
 
-      const buffer = await workbook.xlsx.writeBuffer();
+    Object.keys(matrix).forEach(roll => {
+      const student = matrix[roll];
 
-      res.setHeader(
-        "Content-Type",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-      );
+      const row = isJanuary
+        ? [sr++, roll, student.name, student.avg]
+        : [
+            sr++,
+            roll,
+            student.name,
+            ...subjects.map(s => student.subjects[s.subject_id] ?? 0),
+            student.avg
+          ];
 
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=${divisionName}-${type}.xlsx`
-      );
+      sheet.addRow(row);
+    });
 
-      return res.send(buffer);
-    }
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=${divisionName}-${month}.xlsx`
+    );
+
+    return res.send(buffer);
 
   } catch (err) {
     console.error(err);
