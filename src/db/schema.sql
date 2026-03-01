@@ -108,6 +108,16 @@ CREATE TABLE IF NOT EXISTS attendance (
   )
 );
 
+-- Add all new audit columns
+ALTER TABLE attendance
+ADD COLUMN IF NOT EXISTS marked_by VARCHAR(20) REFERENCES teachers(teacher_id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS marked_ip INET,
+ADD COLUMN IF NOT EXISTS marked_device_type VARCHAR(20) CHECK (marked_device_type IN ('mobile', 'tablet', 'desktop', 'unknown')),
+ADD COLUMN IF NOT EXISTS marked_user_agent TEXT,
+ADD COLUMN IF NOT EXISTS updated_by VARCHAR(20) REFERENCES teachers(teacher_id) ON DELETE SET NULL;
+
+
+
 /* =========================
    OTP TABLES
 ========================= */
@@ -219,3 +229,7 @@ ON timetable (lecture_type, timetable_id);
 
 CREATE INDEX IF NOT EXISTS idx_monthly_student_year
 ON monthly_attendance_summary (student_rollno, academic_year, month);
+
+CREATE INDEX IF NOT EXISTS idx_attendance_marked_by ON attendance (marked_by);
+CREATE INDEX IF NOT EXISTS idx_attendance_updated_by ON attendance (updated_by);
+CREATE INDEX IF NOT EXISTS idx_attendance_marked_ip ON attendance (marked_ip);

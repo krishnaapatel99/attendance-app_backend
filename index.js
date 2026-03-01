@@ -13,7 +13,7 @@ import insertDataRoutes from "./src/routes/insertDataRoutes.js";
 import otpRoutes from "./src/routes/otpRoutes.js";
 import chatbotRoutes from "./src/routes/chatbotRoutes.js";
 import emailRoutes from "./src/routes/emailRoute.js";
-
+import attendanceRoutes from './src/routes/attendance.js';
 import initDB from "./src/db/init.js";
 import { checkRedisHealth } from "./src/utils/redisSafe.js";
 
@@ -121,6 +121,7 @@ app.use("/api/timetable", csrfProtection, timetableRoutes);
 app.use("/api/insertData", csrfProtection, insertDataRoutes);
 app.use("/api/email", csrfProtection, emailRoutes);
 app.use("/api/chatbot", csrfProtection, chatbotRoutes);
+app.use('/api/attendance', attendanceRoutes);
 
 app.use((err, req, res, next) => {
   if (err.code === "EBADCSRFTOKEN") {

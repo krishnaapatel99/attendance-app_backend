@@ -35,7 +35,7 @@ export const getAbsentStudentsForUpdate = async (req, res) => {
 
 export const updateSubmittedAttendance = async (req, res) => {
   const { timetable_id, attendance_date, present_students } = req.body;
-  // present_students = ["SEA127", "SEA130"]
+  const teacherId = req.user.id;
 
   if (!Array.isArray(present_students) || present_students.length === 0) {
     return res.status(400).json({
@@ -48,20 +48,19 @@ export const updateSubmittedAttendance = async (req, res) => {
     await pool.query(
       `
       UPDATE attendance
-      SET status = 'Present',
-          updated_at = CURRENT_TIMESTAMP
+      SET 
+        status = 'Present',
+        updated_at = CURRENT_TIMESTAMP,
+        updated_by = $4
       WHERE timetable_id = $1
         AND attendance_date = $2
         AND student_rollno = ANY($3::text[])
         AND submitted = true
       `,
-      [timetable_id, attendance_date, present_students]
+      [timetable_id, attendance_date, present_students, teacherId]
     );
 
-    res.json({
-      success: true,
-      message: "Attendance updated successfully"
-    });
+    res.json({ success: true, message: "Attendance updated successfully" });
 
   } catch (err) {
     console.error("UPDATE ERROR >>>", err);

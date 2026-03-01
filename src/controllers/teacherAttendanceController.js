@@ -211,6 +211,16 @@ export const getAttendanceData = async (req, res) => {
 // Mark or update attendance (before submission)
 export const markAttendance = async (req, res) => {
   const { student_rollno, timetable_id, status, attendance_date } = req.body;
+  const teacherId = req.user.id;
+
+  const markedIp =
+    req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
+    req.socket.remoteAddress;
+  const userAgent = req.headers["user-agent"] || "unknown";
+
+  let deviceType = "desktop";
+  if (/mobile/i.test(userAgent)) deviceType = "mobile";
+  else if (/tablet|ipad/i.test(userAgent)) deviceType = "tablet";
 
   try {
     const existing = await pool.query(
@@ -235,19 +245,24 @@ export const markAttendance = async (req, res) => {
       await pool.query(
         `
         UPDATE attendance
-        SET status = $1, updated_at = CURRENT_TIMESTAMP
-        WHERE attendance_id = $2
+        SET 
+          status = $1,
+          updated_at = CURRENT_TIMESTAMP,
+          updated_by = $2
+        WHERE attendance_id = $3
         `,
-        [status, existing.rows[0].attendance_id]
+        [status, teacherId, existing.rows[0].attendance_id]
       );
     } else {
       await pool.query(
         `
         INSERT INTO attendance 
-        (student_rollno, timetable_id, status, attendance_date)
-        VALUES ($1, $2, $3, $4)
+          (student_rollno, timetable_id, status, attendance_date,
+           marked_by, marked_ip, marked_device_type, marked_user_agent)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `,
-        [student_rollno, timetable_id, status, attendance_date]
+        [student_rollno, timetable_id, status, attendance_date,
+         teacherId, markedIp, deviceType, userAgent]
       );
     }
 
@@ -263,6 +278,16 @@ export const markAttendance = async (req, res) => {
 // Submit (lock) attendance for a subject and timetable slot
 export const submitAttendance = async (req, res) => {
   const { timetable_id, attendance_date } = req.body;
+  const teacherId = req.user.id;
+  
+  const markedIp =
+    req.headers["x-forwarded-for"]?.split(",")[0].trim() ||
+    req.socket.remoteAddress;
+  const userAgent = req.headers["user-agent"] || "unknown";
+
+  let deviceType = "desktop";
+  if (/mobile/i.test(userAgent)) deviceType = "mobile";
+  else if (/tablet|ipad/i.test(userAgent)) deviceType = "tablet";
 
   try {
     const tt = await pool.query(
@@ -274,15 +299,20 @@ export const submitAttendance = async (req, res) => {
       [timetable_id]
     );
 
+    if (!tt.rows.length) {
+      return res.status(404).json({ success: false, message: "Timetable not found" });
+    }
+
     const { lecture_type, class_id, batch_id } = tt.rows[0];
 
-    let insertQuery;
-    let params;
+    let insertQuery, params;
 
     if (lecture_type === "LECTURE") {
       insertQuery = `
-        INSERT INTO attendance (student_rollno, timetable_id, status, attendance_date)
-        SELECT s.student_rollno, $1, 'Present', $2
+        INSERT INTO attendance 
+          (student_rollno, timetable_id, status, attendance_date,
+           marked_by, marked_ip, marked_device_type, marked_user_agent)
+        SELECT s.student_rollno, $1, 'Present', $2, $4, $5, $6, $7
         FROM students s
         WHERE s.class_id = $3
         AND NOT EXISTS (
@@ -292,11 +322,13 @@ export const submitAttendance = async (req, res) => {
             AND a.attendance_date = $2
         )
       `;
-      params = [timetable_id, attendance_date, class_id];
+      params = [timetable_id, attendance_date, class_id, teacherId, markedIp, deviceType, userAgent];
     } else {
       insertQuery = `
-        INSERT INTO attendance (student_rollno, timetable_id, status, attendance_date)
-        SELECT s.student_rollno, $1, 'Present', $2
+        INSERT INTO attendance 
+          (student_rollno, timetable_id, status, attendance_date,
+           marked_by, marked_ip, marked_device_type, marked_user_agent)
+        SELECT s.student_rollno, $1, 'Present', $2, $4, $5, $6, $7
         FROM students s
         JOIN student_batches sb ON sb.student_rollno = s.student_rollno
         WHERE sb.batch_id = $3
@@ -307,7 +339,7 @@ export const submitAttendance = async (req, res) => {
             AND a.attendance_date = $2
         )
       `;
-      params = [timetable_id, attendance_date, batch_id];
+      params = [timetable_id, attendance_date, batch_id, teacherId, markedIp, deviceType, userAgent];
     }
 
     await pool.query(insertQuery, params);
@@ -316,23 +348,18 @@ export const submitAttendance = async (req, res) => {
       `
       UPDATE attendance
       SET submitted = true
-      WHERE timetable_id = $1
-        AND attendance_date = $2
+      WHERE timetable_id = $1 AND attendance_date = $2
       `,
       [timetable_id, attendance_date]
     );
 
-    // 🔴 IMPORTANT: CLEAR REDIS CACHE FOR THIS LECTURE
     await redisDelSafe(`lecture:students:${timetable_id}`);
 
-    res.json({
-      success: true,
-      message: "Attendance locked"
-    });
+    res.json({ success: true, message: "Attendance locked" });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false });
+
   }
 };
-

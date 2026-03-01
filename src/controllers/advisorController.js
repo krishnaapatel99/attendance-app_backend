@@ -291,11 +291,9 @@ export const updateLecturesByAdvisor = async (req, res) => {
     );
 
     if (advisorRes.rows.length === 0) {
-      return res.status(403).json({
-        success: false,
-        message: "You are not an advisor",
-      });
+      return res.status(403).json({ success: false, message: "You are not an advisor" });
     }
+
     const classId = advisorRes.rows[0].class_id;
     const attendanceIds = updates.map(u => u.attendance_id);
 
@@ -309,11 +307,11 @@ export const updateLecturesByAdvisor = async (req, res) => {
         t.lecture_no,
         sub.subject_name
       FROM attendance a
-JOIN timetable t ON t.timetable_id = a.timetable_id
-JOIN subjects sub ON sub.subject_id = t.subject_id
-JOIN students s ON s.student_rollno = a.student_rollno
-WHERE a.attendance_id = ANY($1::int[])
-  AND s.class_id = $2
+      JOIN timetable t ON t.timetable_id = a.timetable_id
+      JOIN subjects sub ON sub.subject_id = t.subject_id
+      JOIN students s ON s.student_rollno = a.student_rollno
+      WHERE a.attendance_id = ANY($1::int[])
+        AND s.class_id = $2
       `,
       [attendanceIds, classId]
     );
@@ -323,9 +321,7 @@ WHERE a.attendance_id = ANY($1::int[])
     const newStatuses = [];
 
     for (const row of currentRes.rows) {
-      const requested = updates.find(
-        u => u.attendance_id === row.attendance_id
-      );
+      const requested = updates.find(u => u.attendance_id === row.attendance_id);
 
       if (!requested) continue;
 
@@ -362,7 +358,6 @@ WHERE a.attendance_id = ANY($1::int[])
         continue;
       }
 
-      // ✅ Allowed change
       idsToUpdate.push(row.attendance_id);
       newStatuses.push(requested.status);
 
@@ -382,7 +377,8 @@ WHERE a.attendance_id = ANY($1::int[])
         `
         UPDATE attendance
         SET status = data.status,
-            updated_at = CURRENT_TIMESTAMP
+            updated_at = CURRENT_TIMESTAMP,
+            updated_by = $3
         FROM (
           SELECT
             UNNEST($1::int[])  AS attendance_id,
@@ -390,7 +386,7 @@ WHERE a.attendance_id = ANY($1::int[])
         ) AS data
         WHERE attendance.attendance_id = data.attendance_id
         `,
-        [idsToUpdate, newStatuses]
+        [idsToUpdate, newStatuses, teacherId]
       );
     }
 
